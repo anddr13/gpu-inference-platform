@@ -1,0 +1,120 @@
+# GPU fleet health from DCGM exporter + kube-state-metrics.
+# DCGM series carry a "node" label (relabeled in platform/gpu-operator/values.yaml).
+#
+# No alert on GPU memory usage: vLLM pre-allocates --gpu-memory-utilization of the card at
+# startup, so framebuffer usage is ~90% by design. KV cache usage is the meaningful signal.
+groups:
+  - name: gpu.recording
+    interval: 30s
+    rules:
+      - record: gpu:utilization:avg
+        expr: avg by (node, gpu, modelName) (DCGM_FI_DEV_GPU_UTIL)
+      - record: gpu:framebuffer_used:ratio
+        expr: |
+          max by (node, gpu, modelName) (DCGM_FI_DEV_FB_USED)
+            /
+          max by (node, gpu, modelName) (DCGM_FI_DEV_FB_USED + DCGM_FI_DEV_FB_FREE + DCGM_FI_DEV_FB_RESERVED)
+
+  - name: gpu.alerts
+    rules:
+      # XIDs that mean hardware or driver trouble: drain the node, reset or replace the GPU.
+      # 48 DBE ECC, 64 row remap failure, 74 NVLink, 79 fallen off the bus, 94/95 ECC, 119/120 GSP.
+      - alert: GPUXidCritical
+        expr: |
+          DCGM_FI_DEV_XID_ERRORS == 48 or DCGM_FI_DEV_XID_ERRORS == 64 or DCGM_FI_DEV_XID_ERRORS == 74
+          or DCGM_FI_DEV_XID_ERRORS == 79 or DCGM_FI_DEV_XID_ERRORS == 94 or DCGM_FI_DEV_XID_ERRORS == 95
+          or DCGM_FI_DEV_XID_ERRORS == 119 or DCGM_FI_DEV_XID_ERRORS == 120
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} reported critical XID {{ $value }}"
+          description: "Hardware or driver fault. Cordon and drain the node, then reset or replace the GPU."
+          runbook_url: "__RUNBOOK_BASE__#gpuxidcritical"
+
+      # Any new XID, including application-caused ones (13 / 31 / 43: illegal memory access, page fault).
+      - alert: GPUXidErrorObserved
+        expr: (DCGM_FI_DEV_XID_ERRORS > 0) and (changes(DCGM_FI_DEV_XID_ERRORS[15m]) > 0)
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} reported XID {{ $value }}"
+          description: "Check which pod used the GPU and the kernel log (dmesg | grep -i xid)."
+          runbook_url: "__RUNBOOK_BASE__#gpuxiderrorobserved"
+
+      - alert: GPURowRemapFailure
+        expr: DCGM_FI_DEV_ROW_REMAP_FAILURE > 0
+        labels:
+          severity: critical
+        annotations:
+          summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} failed to remap a memory row"
+          description: "The GPU has run out of spare memory rows. It needs an RMA."
+          runbook_url: "__RUNBOOK_BASE__#gpurowremapfailure"
+
+      # GPU Feature Discovery labels the node, but the device plugin advertises no nvidia.com/gpu:
+      # pods asking for GPUs stay Pending.
+      - alert: GPUNodeNotAdvertisingGPUs
+        expr: |
+          max by (node) (kube_node_labels{label_nvidia_com_gpu_present="true"})
+            unless on (node)
+          max by (node) (kube_node_status_allocatable{resource="nvidia_com_gpu"} > 0)
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Node {{ $labels.node }} has a GPU but advertises no allocatable nvidia.com/gpu"
+          description: "Device plugin or driver is broken on this node. GPU pods cannot be scheduled there."
+          runbook_url: "__RUNBOOK_BASE__#gpunodenotadvertisinggpus"
+
+      - alert: GPUTelemetryMissing
+        expr: |
+          max by (node) (kube_node_labels{label_nvidia_com_gpu_present="true"})
+            unless on (node)
+          max by (node) (DCGM_FI_DEV_GPU_UTIL)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "No DCGM metrics from GPU node {{ $labels.node }}"
+          description: "dcgm-exporter is not running or not scraped there. GPU alerts are blind for this node."
+          runbook_url: "__RUNBOOK_BASE__#gputelemetrymissing"
+
+      - alert: GPUOperatorComponentUnavailable
+        expr: kube_daemonset_status_number_unavailable{namespace="gpu-operator"} > 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} pod(s) of gpu-operator/{{ $labels.daemonset }} unavailable"
+          description: "A GPU Operator operand is failing on some node."
+          runbook_url: "__RUNBOOK_BASE__#gpuoperatorcomponentunavailable"
+
+      - alert: GPUHighTemperature
+        expr: DCGM_FI_DEV_GPU_TEMP > 85
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} is at {{ $value }}C"
+          description: "Sustained high temperature leads to thermal throttling and lower throughput."
+          runbook_url: "__RUNBOOK_BASE__#gpuhightemperature"
+
+      - alert: GPUThermalThrottling
+        expr: rate(DCGM_FI_DEV_THERMAL_VIOLATION[10m]) / 1e9 > 0.2
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "GPU {{ $labels.gpu }} on {{ $labels.node }} is thermally throttled {{ $value | humanizePercentage }} of the time"
+          description: "Clocks are reduced for heat. Tokens/s per GPU drops even though utilisation looks fine."
+          runbook_url: "__RUNBOOK_BASE__#gpuhightemperature"
+
+      # FinOps: a GPU attached to a pod that does almost nothing for hours.
+      - alert: GPUAllocatedButIdle
+        expr: avg_over_time(DCGM_FI_DEV_GPU_UTIL{exported_pod!=""}[2h]) < 5
+        for: 30m
+        labels:
+          severity: info
+        annotations:
+          summary: "{{ $labels.exported_namespace }}/{{ $labels.exported_pod }} holds GPU {{ $labels.gpu }} on {{ $labels.node }} at {{ $value | humanize }}% average use"
+          description: "Over the last 2 hours the GPU was almost idle. Scale down or share the GPU."
+          runbook_url: "__RUNBOOK_BASE__#gpuallocatedbutidle"

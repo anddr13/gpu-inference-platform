@@ -1,0 +1,20 @@
+{{- if eq .Values.modelCache.type "pvc" }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "vllm.fullname" . }}-cache
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+  annotations:
+    # Keep downloaded weights when the release is uninstalled.
+    helm.sh/resource-policy: keep
+spec:
+  accessModes:
+    - {{ .Values.modelCache.accessMode }}
+  {{- with .Values.modelCache.storageClassName }}
+  storageClassName: {{ . }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.modelCache.size }}
+{{- end }}

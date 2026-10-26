@@ -1,0 +1,5 @@
+# Base URL that alert annotations link to; anchors are lowercase alert names.
+runbookBaseUrl: https://github.com/anddr13/gpu-inference-platform/blob/main/docs/runbooks.md
+
+# Grafana folder for the dashboards (sidecar folderAnnotation: grafana_folder).
+grafanaFolder: LLM Platform

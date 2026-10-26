@@ -1,0 +1,59 @@
+# In-cluster load test. `make loadtest` creates the script ConfigMap and runs this Job.
+# Runs inside the cluster on purpose: kubectl port-forward serialises streams through the API
+# server and distorts latency at high concurrency.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: llm-load
+  namespace: llm
+  labels:
+    app.kubernetes.io/name: llm-load
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: llm-load
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: load
+          image: python:3.13-slim
+          command: ["sh", "-c"]
+          args:
+            - >-
+              pip install --quiet --no-cache-dir httpx==0.28.1 &&
+              python /app/llm_load.py
+              --base-url "$BASE_URL" --model "$MODEL"
+              --stages "$STAGES" --stage-duration "$STAGE_DURATION"
+              --prompt-tokens "$PROMPT_TOKENS" --max-tokens "$MAX_TOKENS"
+              --slo-ttft-p95 2.5
+          env:
+            - name: BASE_URL
+              value: http://vllm.llm.svc:8000
+            - name: MODEL
+              value: qwen2.5-1.5b
+            - name: STAGES
+              value: "1,8,16,32,48,64,96"
+            - name: STAGE_DURATION
+              value: "90"
+            - name: PROMPT_TOKENS
+              value: "512"
+            - name: MAX_TOKENS
+              value: "256"
+            - name: PYTHONUNBUFFERED
+              value: "1"
+          resources:
+            requests:
+              cpu: 500m
+              memory: 256Mi
+            limits:
+              memory: 512Mi
+          volumeMounts:
+            - name: script
+              mountPath: /app
+      volumes:
+        - name: script
+          configMap:
+            name: llm-load-script

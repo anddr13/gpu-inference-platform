@@ -1,0 +1,69 @@
+# kube-prometheus-stack, chart 92.11.0. Lab sizing: no persistence, short retention.
+# Everything in Grafana is provisioned from git (charts/llm-observability); nothing is click-ops.
+
+# Control-plane components are not scrapeable on EKS (managed) or k3s (embedded in one binary).
+kubeControllerManager:
+  enabled: false
+kubeScheduler:
+  enabled: false
+kubeProxy:
+  enabled: false
+kubeEtcd:
+  enabled: false
+
+prometheus:
+  prometheusSpec:
+    retention: 3d
+    scrapeInterval: 15s
+    evaluationInterval: 30s
+    # Select ServiceMonitors / PodMonitors / PrometheusRules from every release, not only this one.
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        memory: 3Gi
+
+kube-state-metrics:
+  # Exposes kube_node_labels{label_nvidia_com_gpu_present="true"} for the "GPU node lost its GPUs" alert.
+  metricLabelsAllowlist:
+    - nodes=[nvidia.com/gpu.present,nvidia.com/gpu.product,nvidia.com/gpu.replicas,node.kubernetes.io/instance-type]
+
+grafana:
+  # adminPassword is injected by helmfile from $GRAFANA_ADMIN_PASSWORD.
+  defaultDashboardsTimezone: browser
+  persistence:
+    enabled: false
+  sidecar:
+    dashboards:
+      enabled: true
+      label: grafana_dashboard
+      labelValue: "1"
+      folderAnnotation: grafana_folder
+      provider:
+        foldersFromFilesStructure: true
+
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 20m
+        memory: 64Mi
+  # Wire a real receiver when you want pages. Example for Telegram:
+  # config:
+  #   route:
+  #     receiver: telegram
+  #     group_by: [alertname, namespace]
+  #     routes:
+  #       - matchers: [alertname = "Watchdog"]
+  #         receiver: "null"
+  #   receivers:
+  #     - name: "null"
+  #     - name: telegram
+  #       telegram_configs:
+  #         - bot_token_file: /etc/alertmanager/secrets/telegram/token
+  #           chat_id: 123456789
+  #           parse_mode: HTML

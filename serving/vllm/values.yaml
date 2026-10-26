@@ -1,0 +1,32 @@
+# Lab profile for real GPUs (k3s and EKS). One 24 GB GPU is time-sliced into 3 slots
+# (GPU Operator config "time-sliced-3"): KEDA runs 1-2 replicas and the third slot stays free,
+# so a rolling update can always start its surge pod (N+1).
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  # Pinned commit of the HF repo: benchmarks stay reproducible when the model card changes.
+  revision: 989aa7980e4cf806f80c7fef2b1adb7bc71aa306
+  servedName: qwen2.5-1.5b
+  maxModelLen: 8192
+  # 3 slots x 0.30 x 24 GB = ~21.6 GB. Per replica: ~3 GB weights, ~1 GB activations and CUDA
+  # graphs, ~3 GB KV cache. With GQA (2 KV heads) a token costs ~28 KB: ~100k tokens of cache.
+  gpuMemoryUtilization: 0.30
+  maxNumSeqs: 64
+
+# Three pods at once during a rollout: 3 x 6 GiB fits a 32 GiB node next to the daemonsets.
+resources:
+  requests:
+    cpu: "2"
+    memory: 6Gi
+  limits:
+    memory: 10Gi
+    nvidia.com/gpu: 1
+
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 2
+  targetInFlightPerReplica: 24
+
+serviceMonitor:
+  interval: 10s

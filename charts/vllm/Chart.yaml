@@ -1,0 +1,11 @@
+apiVersion: v2
+name: vllm
+description: vLLM OpenAI-compatible inference server for GPU nodes managed by the NVIDIA GPU Operator
+type: application
+version: 0.1.0
+appVersion: "v0.32.0"
+keywords:
+  - llm
+  - vllm
+  - gpu
+  - inference

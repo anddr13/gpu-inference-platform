@@ -1,0 +1,2 @@
+cluster: eks-lab
+gpu: true

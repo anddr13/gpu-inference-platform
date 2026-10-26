@@ -1,0 +1,13 @@
+{{- if .Values.args }}
+Custom entrypoint ({{ first .Values.command }}): no model download, startup takes seconds.
+{{- else }}
+vLLM is starting. The first start pulls the image (~10 GB) and downloads the model, so expect several minutes.
+{{- end }}
+
+  kubectl -n {{ .Release.Namespace }} rollout status deploy/{{ include "vllm.fullname" . }} --timeout=20m
+
+Try it:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "vllm.fullname" . }} 8000:{{ .Values.service.port }}
+  curl -s localhost:8000/v1/chat/completions -H 'Content-Type: application/json' \
+    -d '{"model":"{{ .Values.model.servedName }}","messages":[{"role":"user","content":"Hello"}],"max_tokens":64}'

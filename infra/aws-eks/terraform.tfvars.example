@@ -1,0 +1,10 @@
+# cp terraform.tfvars.example terraform.tfvars
+region            = "eu-north-1"
+api_allowed_cidrs = ["203.0.113.10/32"] # your public IP
+
+# Email alerts at 80% of the monthly budget (actual) and 100% (forecast).
+budget_alert_email = "you@example.com"
+monthly_budget_usd = 30
+
+# On-demand if your account has no Spot quota for G instances yet.
+# gpu_capacity_type = "ON_DEMAND"

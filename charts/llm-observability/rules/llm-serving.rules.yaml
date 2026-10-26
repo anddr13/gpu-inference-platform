@@ -1,0 +1,87 @@
+# vLLM serving: recording rules + cause-level alerts (warning).
+# User-facing symptoms page through the SLO burn-rate alerts in llm-slo.rules.yaml instead.
+groups:
+  - name: llm-serving.recording
+    interval: 30s
+    rules:
+      - record: llm:requests:rate5m
+        expr: sum by (namespace, model_name) (rate(vllm:request_success_total[5m]))
+      - record: llm:prompt_tokens:rate5m
+        expr: sum by (namespace, model_name) (rate(vllm:prompt_tokens_total[5m]))
+      - record: llm:generation_tokens:rate5m
+        expr: sum by (namespace, model_name) (rate(vllm:generation_tokens_total[5m]))
+      - record: llm:ttft_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (namespace, model_name, le) (rate(vllm:time_to_first_token_seconds_bucket[5m])))
+      - record: llm:itl_seconds:p95_5m
+        expr: histogram_quantile(0.95, sum by (namespace, model_name, le) (rate(vllm:inter_token_latency_seconds_bucket[5m])))
+      # The autoscaling signal (see the ScaledObject in charts/vllm).
+      - record: llm:in_flight_requests:sum
+        expr: |
+          sum by (namespace, model_name) (vllm:num_requests_running)
+            +
+          sum by (namespace, model_name) (vllm:num_requests_waiting)
+
+  - name: llm-serving.alerts
+    rules:
+      - alert: VLLMNoHealthyReplicas
+        expr: sum by (namespace, service) (up{job="vllm"}) == 0
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          summary: "No vLLM replica of {{ $labels.namespace }}/{{ $labels.service }} is serving"
+          description: "Every vLLM target has failed scrapes for 10 minutes. The model API is down."
+          runbook_url: "__RUNBOOK_BASE__#vllmnohealthyreplicas"
+
+      - alert: VLLMTargetDown
+        expr: up{job="vllm"} == 0
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM pod {{ $labels.namespace }}/{{ $labels.pod }} is not serving /metrics"
+          description: "A normal cold start (image pull, model load, CUDA graph capture) finishes within 10 minutes."
+          runbook_url: "__RUNBOOK_BASE__#vllmtargetdown"
+
+      - alert: VLLMKVCacheSaturated
+        expr: max by (namespace, pod, model_name) (vllm:kv_cache_usage_perc) > 0.95
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "KV cache of {{ $labels.namespace }}/{{ $labels.pod }} is {{ $value | humanizePercentage }} full"
+          description: "New requests queue and running ones get preempted. Expect TTFT to climb."
+          runbook_url: "__RUNBOOK_BASE__#vllmkvcachesaturated"
+
+      - alert: VLLMPreemptions
+        expr: sum by (namespace, pod, model_name) (rate(vllm:num_preemptions_total[5m])) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "vLLM {{ $labels.namespace }}/{{ $labels.pod }} preempts {{ $value | humanize }} requests/s"
+          description: "The scheduler evicts running sequences to free KV cache and recomputes them later."
+          runbook_url: "__RUNBOOK_BASE__#vllmpreemptions"
+
+      - alert: VLLMRequestsQueued
+        expr: sum by (namespace, model_name) (vllm:num_requests_waiting) > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $value }} requests waiting for {{ $labels.model_name }} in {{ $labels.namespace }}"
+          description: "Demand exceeds the batch capacity of the running replicas for 10 minutes."
+          runbook_url: "__RUNBOOK_BASE__#vllmrequestsqueued"
+
+      - alert: VLLMAutoscalerAtMaxReplicas
+        expr: |
+          kube_horizontalpodautoscaler_status_current_replicas{horizontalpodautoscaler=~"keda-hpa-.*"}
+            >=
+          kube_horizontalpodautoscaler_spec_max_replicas{horizontalpodautoscaler=~"keda-hpa-.*"}
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.namespace }}/{{ $labels.horizontalpodautoscaler }} has been at max replicas for 15 minutes"
+          description: "Autoscaling has no headroom left. Add GPU capacity or raise maxReplicas."
+          runbook_url: "__RUNBOOK_BASE__#vllmautoscaleratmaxreplicas"

@@ -1,0 +1,12 @@
+{{- /* rules/*.yaml are plain Prometheus rule files so promtool can unit-test them as-is. */ -}}
+{{- range $path, $_ := .Files.Glob "rules/*.yaml" }}
+---
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: {{ base $path | trimSuffix ".yaml" | replace "." "-" }}
+  labels:
+    app.kubernetes.io/part-of: llm-observability
+spec:
+{{ $.Files.Get $path | replace "__RUNBOOK_BASE__" $.Values.runbookBaseUrl | indent 2 }}
+{{- end }}

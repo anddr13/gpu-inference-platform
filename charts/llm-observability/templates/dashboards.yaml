@@ -1,0 +1,16 @@
+{{- /* Source of truth: observability/build_dashboards.py renders dashboards/*.json. */ -}}
+{{- range $path, $_ := .Files.Glob "dashboards/*.json" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ printf "dashboard-%s" (base $path | trimSuffix ".json") }}
+  labels:
+    grafana_dashboard: "1"
+    app.kubernetes.io/part-of: llm-observability
+  annotations:
+    grafana_folder: {{ $.Values.grafanaFolder | quote }}
+data:
+  {{ base $path }}: |-
+{{ $.Files.Get $path | indent 4 }}
+{{- end }}

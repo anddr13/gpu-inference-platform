@@ -1,0 +1,5 @@
+apiVersion: v2
+name: llm-observability
+description: Grafana dashboards, recording rules, alerts and SLOs for GPU inference (DCGM + vLLM)
+type: application
+version: 0.1.0

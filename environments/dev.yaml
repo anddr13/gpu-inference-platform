@@ -1,0 +1,3 @@
+cluster: kind-dev
+# No GPU: skip the GPU Operator, run the fake vLLM.
+gpu: false

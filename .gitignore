@@ -1,0 +1,19 @@
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+*.tfplan
+crash.log
+
+# Python
+__pycache__/
+.venv/
+.ruff_cache/
+
+# Load test output
+results/
+
+# Local kubeconfigs
+*.kubeconfig
+kubeconfig*

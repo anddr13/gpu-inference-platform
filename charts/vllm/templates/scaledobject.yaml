@@ -1,0 +1,46 @@
+{{- if .Values.autoscaling.enabled }}
+{{- $sel := include "vllm.promSelector" . }}
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: {{ include "vllm.fullname" . }}
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    name: {{ include "vllm.fullname" . }}
+  # Scale-to-zero is off on purpose: a cold start (image pull + weights + CUDA graphs) takes minutes.
+  minReplicaCount: {{ .Values.autoscaling.minReplicas }}
+  maxReplicaCount: {{ .Values.autoscaling.maxReplicas }}
+  pollingInterval: {{ .Values.autoscaling.pollingInterval }}
+  cooldownPeriod: {{ .Values.autoscaling.cooldownPeriod }}
+  # If Prometheus is unreachable, hold the minimum instead of guessing.
+  fallback:
+    failureThreshold: 3
+    replicas: {{ .Values.autoscaling.minReplicas }}
+  advanced:
+    horizontalPodAutoscalerConfig:
+      behavior:
+        scaleUp:
+          stabilizationWindowSeconds: 0
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 60
+        scaleDown:
+          stabilizationWindowSeconds: {{ .Values.autoscaling.scaleDownStabilizationSeconds }}
+          policies:
+            - type: Pods
+              value: 1
+              periodSeconds: 300
+  triggers:
+    # Concurrency-based scaling: desired = ceil(total in-flight / target per replica).
+    # GPU utilisation is a poor signal for LLM serving: it sits near 100% at any batch size.
+    - type: prometheus
+      name: in-flight-requests
+      metricType: AverageValue
+      metadata:
+        serverAddress: {{ .Values.autoscaling.prometheusAddress }}
+        query: sum(vllm:num_requests_running{ {{- $sel -}} }) + sum(vllm:num_requests_waiting{ {{- $sel -}} })
+        threshold: {{ .Values.autoscaling.targetInFlightPerReplica | quote }}
+{{- end }}

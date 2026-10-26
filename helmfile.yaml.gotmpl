@@ -1,0 +1,96 @@
+# helmfile -e k3s apply   |   helmfile -e eks apply   |   helmfile -e dev sync (kind, no GPU)
+environments:
+  k3s:
+    values:
+      - environments/k3s.yaml
+  eks:
+    values:
+      - environments/eks.yaml
+  dev:
+    # Pinned so `-e dev` can never land on whatever context happens to be current.
+    kubeContext: kind-gpu-lab-dev
+    values:
+      - environments/dev.yaml
+---
+helmDefaults:
+  createNamespace: true
+  wait: true
+  # The first vLLM rollout pulls a ~10 GB image and downloads the model.
+  timeout: 1800
+
+repositories:
+  - name: prometheus-community
+    url: https://prometheus-community.github.io/helm-charts
+  - name: nvidia
+    url: https://helm.ngc.nvidia.com/nvidia
+  - name: kedacore
+    url: https://kedacore.github.io/charts
+
+releases:
+  - name: kube-prometheus-stack
+    namespace: monitoring
+    chart: prometheus-community/kube-prometheus-stack
+    version: 92.11.0
+    values:
+      - platform/kube-prometheus-stack/values.yaml
+      - prometheus:
+          prometheusSpec:
+            externalLabels:
+              cluster: {{ .Values.cluster }}
+        grafana:
+          adminPassword: {{ requiredEnv "GRAFANA_ADMIN_PASSWORD" | quote }}
+{{- if not .Values.gpu }}
+        # kind on Docker Desktop: the host root is not a shared mount, node-exporter cannot mount it.
+        prometheus-node-exporter:
+          hostRootFsMount:
+            enabled: false
+{{- end }}
+
+  - name: gpu-operator
+    namespace: gpu-operator
+    chart: nvidia/gpu-operator
+    version: v26.7.2
+    installed: {{ .Values.gpu }}
+    # ServiceMonitor CRD comes from kube-prometheus-stack.
+    needs:
+      - monitoring/kube-prometheus-stack
+    values:
+      - platform/gpu-operator/values.yaml
+
+  - name: keda
+    namespace: keda
+    chart: kedacore/keda
+    version: 2.21.0
+
+  - name: llm-observability
+    namespace: monitoring
+    chart: ./charts/llm-observability
+    needs:
+      - monitoring/kube-prometheus-stack
+
+  - name: vllm
+    namespace: llm
+    chart: ./charts/vllm
+    needs:
+{{- if .Values.gpu }}
+      - gpu-operator/gpu-operator
+{{- end }}
+      - keda/keda
+      - monitoring/kube-prometheus-stack
+    values:
+      - serving/vllm/values.yaml
+      - serving/vllm/values-{{ .Environment.Name }}.yaml
+{{- if not .Values.gpu }}
+    hooks:
+      # The fake vLLM script ships as a ConfigMap, so the dev cluster needs no image build.
+      - events: ["presync"]
+        showlogs: true
+        command: sh
+        args:
+          - -c
+          - >-
+            kubectl create namespace llm --dry-run=client -o yaml
+            | kubectl --context kind-gpu-lab-dev apply -f - &&
+            kubectl -n llm create configmap fake-vllm --from-file=loadtest/fake_vllm.py --dry-run=client -o yaml
+            | kubectl --context kind-gpu-lab-dev apply -f -
+{{- end }}

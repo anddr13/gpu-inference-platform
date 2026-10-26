@@ -1,0 +1,10 @@
+# k3s: local-path provisioner backs the model cache, so restarts skip the download.
+# Both replicas land on the same node, so a ReadWriteOnce volume can be shared.
+modelCache:
+  type: pvc
+  size: 40Gi
+  storageClassName: local-path
+
+# k3s ships a NetworkPolicy controller.
+networkPolicy:
+  enabled: true

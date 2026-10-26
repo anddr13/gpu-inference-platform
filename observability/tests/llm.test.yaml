@@ -1,0 +1,108 @@
+# promtool test rules observability/tests/*.test.yaml
+rule_files:
+  - ../../charts/llm-observability/rules/llm-serving.rules.yaml
+  - ../../charts/llm-observability/rules/llm-slo.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: KV cache saturation fires after 10 minutes above 95%
+    interval: 1m
+    input_series:
+      - series: 'vllm:kv_cache_usage_perc{job="vllm", namespace="llm", service="vllm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '0.5x5 0.98x25'
+      - series: 'vllm:num_requests_running{job="vllm", namespace="llm", service="vllm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '20x30'
+      - series: 'vllm:num_requests_waiting{job="vllm", namespace="llm", service="vllm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '10x30'
+    promql_expr_test:
+      - expr: llm:in_flight_requests:sum
+        eval_time: 5m
+        exp_samples:
+          - labels: 'llm:in_flight_requests:sum{namespace="llm", model_name="qwen2.5-1.5b"}'
+            value: 30
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: VLLMKVCacheSaturated
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: VLLMKVCacheSaturated
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              namespace: llm
+              pod: vllm-a
+              model_name: qwen2.5-1.5b
+            exp_annotations:
+              summary: "KV cache of llm/vllm-a is 98% full"
+              description: "New requests queue and running ones get preempted. Expect TTFT to climb."
+              runbook_url: "__RUNBOOK_BASE__#vllmkvcachesaturated"
+
+  - name: 9% of calls fail with 5xx -> availability fast burn pages
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="vllm", namespace="llm", service="vllm", pod="vllm-a", handler="/v1/chat/completions", method="POST", status="2xx"}'
+        values: '0+100x90'
+      - series: 'http_requests_total{job="vllm", namespace="llm", service="vllm", pod="vllm-a", handler="/v1/chat/completions", method="POST", status="5xx"}'
+        values: '0+10x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: LLMAvailabilityBudgetFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: llm
+              service: vllm
+            exp_annotations:
+              summary: "llm/vllm burns the availability budget 14x too fast"
+              description: "9.091% of API calls returned 5xx over the last hour (SLO 99.5%)."
+              runbook_url: "__RUNBOOK_BASE__#llmavailabilitybudgetburn"
+
+  - name: healthy traffic does not page
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="vllm", namespace="llm", service="vllm", pod="vllm-a", handler="/v1/chat/completions", method="POST", status="2xx"}'
+        values: '0+100x90'
+      - series: 'http_requests_total{job="vllm", namespace="llm", service="vllm", pod="vllm-a", handler="/v1/chat/completions", method="POST", status="5xx"}'
+        values: '0+0x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: LLMAvailabilityBudgetFastBurn
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: LLMAvailabilityBudgetSlowBurn
+        exp_alerts: []
+
+  - name: 20% of requests over 2.5s TTFT -> latency fast burn pages
+    interval: 1m
+    input_series:
+      - series: 'vllm:time_to_first_token_seconds_bucket{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0", le="2.5"}'
+        values: '0+80x90'
+      - series: 'vllm:time_to_first_token_seconds_bucket{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0", le="+Inf"}'
+        values: '0+100x90'
+      - series: 'vllm:time_to_first_token_seconds_count{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '0+100x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: LLMLatencyBudgetFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: llm
+              model_name: qwen2.5-1.5b
+            exp_annotations:
+              summary: "qwen2.5-1.5b in llm burns the TTFT budget 14x too fast"
+              description: "20% of requests waited more than 2.5s for the first token over the last hour (SLO 99%)."
+              runbook_url: "__RUNBOOK_BASE__#llmlatencybudgetburn"
+
+  - name: no 5xx series at all still yields a 0 error ratio (not "no data")
+    interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="vllm", namespace="llm", service="vllm", pod="vllm-a", handler="/v1/chat/completions", method="POST", status="2xx"}'
+        values: '0+100x20'
+    promql_expr_test:
+      - expr: slo:llm_api_errors:ratio_rate5m
+        eval_time: 15m
+        exp_samples:
+          - labels: 'slo:llm_api_errors:ratio_rate5m{namespace="llm", service="vllm"}'
+            value: 0

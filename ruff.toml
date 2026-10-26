@@ -1,0 +1,9 @@
+line-length = 130
+target-version = "py312"
+
+[lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "ASYNC"]
+
+[lint.per-file-ignores]
+# One PromQL query per line reads better than a wrapped one.
+"observability/build_dashboards.py" = ["E501"]

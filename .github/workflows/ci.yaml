@@ -1,0 +1,113 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: v3.22.1
+  HELMFILE_VERSION: 1.8.2
+  KIND_VERSION: v0.33.0
+
+jobs:
+  charts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.8.0/kubeconform-linux-amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin kubeconform
+      - run: make lint-charts ENV=k3s
+      - run: make lint-charts ENV=eks
+      - run: make lint-charts ENV=dev
+
+  helmfile:
+    runs-on: ubuntu-latest
+    env:
+      GRAFANA_ADMIN_PASSWORD: ci-dummy
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install helmfile
+        run: |
+          curl -sSL https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin helmfile
+      # Renders every release against the pinned upstream charts, so a bad values key fails here.
+      - run: helmfile -e k3s template > /dev/null
+      - run: helmfile -e eks template > /dev/null
+
+  rules:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: make test-rules
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: pip install httpx==0.28.1 ruff
+      - run: make lint-python
+      - run: make check-dashboards
+      - name: Load test smoke against the fake vLLM
+        run: |
+          python loadtest/fake_vllm.py --port 8001 --capacity 4 &
+          sleep 1
+          python loadtest/llm_load.py --base-url http://127.0.0.1:8001 --stages 1,4 --stage-duration 3 --max-tokens 16
+          curl -sf http://127.0.0.1:8001/metrics | grep -q 'vllm:time_to_first_token_seconds_bucket'
+
+  # The whole platform on kind with the fake vLLM: scraping, rules, dashboards, KEDA, burn-rate alert.
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: [charts, helmfile, rules, python]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install helmfile and kind
+        run: |
+          curl -sSL https://github.com/helmfile/helmfile/releases/download/v${HELMFILE_VERSION}/helmfile_${HELMFILE_VERSION}_linux_amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin helmfile
+          sudo curl -sSLo /usr/local/bin/kind https://github.com/kubernetes-sigs/kind/releases/download/${KIND_VERSION}/kind-linux-amd64
+          sudo chmod +x /usr/local/bin/kind
+      - run: make dev-up
+      - run: make e2e
+      - name: Dump cluster state
+        if: failure()
+        run: |
+          export KUBECONFIG=$HOME/.kube/kind-gpu-lab-dev.yaml
+          kubectl get pods -A -o wide
+          kubectl -n llm describe pods
+          kubectl -n llm get scaledobject,hpa -o wide
+          kubectl -n keda logs deploy/keda-operator --tail=100
+          kubectl -n llm logs job/llm-load --tail=100 || true
+
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: hashicorp/setup-terraform@v3
+      - run: terraform -chdir=infra/aws-eks fmt -check
+      - run: terraform -chdir=infra/aws-eks init -backend=false -input=false
+      - run: terraform -chdir=infra/aws-eks validate
+
+  shell:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: shellcheck infra/k3s/bootstrap.sh infra/aws-eks/preflight.sh

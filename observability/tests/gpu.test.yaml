@@ -1,0 +1,84 @@
+# promtool test rules observability/tests/*.test.yaml
+rule_files:
+  - ../../charts/llm-observability/rules/gpu.rules.yaml
+
+evaluation_interval: 30s
+
+tests:
+  - name: XID 79 is critical, XID 13 is only a warning, both clear once the value stops changing
+    interval: 1m
+    input_series:
+      - series: 'DCGM_FI_DEV_XID_ERRORS{node="gpu-node-1", gpu="0", modelName="NVIDIA L4", UUID="GPU-1111"}'
+        values: '0x9 79x20'
+      - series: 'DCGM_FI_DEV_XID_ERRORS{node="gpu-node-2", gpu="0", modelName="NVIDIA L4", UUID="GPU-2222"}'
+        values: '0x9 13x20'
+    alert_rule_test:
+      - eval_time: 12m
+        alertname: GPUXidCritical
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              node: gpu-node-1
+              gpu: "0"
+              modelName: NVIDIA L4
+              UUID: GPU-1111
+            exp_annotations:
+              summary: "GPU 0 on gpu-node-1 reported critical XID 79"
+              description: "Hardware or driver fault. Cordon and drain the node, then reset or replace the GPU."
+              runbook_url: "__RUNBOOK_BASE__#gpuxidcritical"
+      - eval_time: 12m
+        alertname: GPUXidErrorObserved
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              node: gpu-node-1
+              gpu: "0"
+              modelName: NVIDIA L4
+              UUID: GPU-1111
+            exp_annotations:
+              summary: "GPU 0 on gpu-node-1 reported XID 79"
+              description: "Check which pod used the GPU and the kernel log (dmesg | grep -i xid)."
+              runbook_url: "__RUNBOOK_BASE__#gpuxiderrorobserved"
+          - exp_labels:
+              severity: warning
+              node: gpu-node-2
+              gpu: "0"
+              modelName: NVIDIA L4
+              UUID: GPU-2222
+            exp_annotations:
+              summary: "GPU 0 on gpu-node-2 reported XID 13"
+              description: "Check which pod used the GPU and the kernel log (dmesg | grep -i xid)."
+              runbook_url: "__RUNBOOK_BASE__#gpuxiderrorobserved"
+      - eval_time: 28m
+        alertname: GPUXidErrorObserved
+        exp_alerts: []
+
+  - name: GPU node stops advertising nvidia.com/gpu (device plugin broken)
+    interval: 1m
+    input_series:
+      - series: 'kube_node_labels{node="gpu-node-1", label_nvidia_com_gpu_present="true", job="kube-state-metrics"}'
+        values: '1x30'
+      - series: 'kube_node_labels{node="cpu-node-1", job="kube-state-metrics"}'
+        values: '1x30'
+      - series: 'kube_node_status_allocatable{node="gpu-node-1", resource="nvidia_com_gpu", unit="integer", job="kube-state-metrics"}'
+        values: '2x5 0x25'
+      - series: 'DCGM_FI_DEV_GPU_UTIL{node="gpu-node-1", gpu="0", modelName="NVIDIA L4", UUID="GPU-1111"}'
+        values: '50x30'
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: GPUNodeNotAdvertisingGPUs
+        exp_alerts: []
+      - eval_time: 20m
+        alertname: GPUNodeNotAdvertisingGPUs
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              node: gpu-node-1
+            exp_annotations:
+              summary: "Node gpu-node-1 has a GPU but advertises no allocatable nvidia.com/gpu"
+              description: "Device plugin or driver is broken on this node. GPU pods cannot be scheduled there."
+              runbook_url: "__RUNBOOK_BASE__#gpunodenotadvertisinggpus"
+      # DCGM metrics are present, so the telemetry alert stays quiet.
+      - eval_time: 20m
+        alertname: GPUTelemetryMissing
+        exp_alerts: []

@@ -1,0 +1,6 @@
+# EKS: no EBS CSI driver in this lab, so the model cache is node-local scratch space
+# on the 200 GB GPU node root volume. g6.2xlarge / g5.2xlarge (8 vCPU, 32 GiB) fit both
+# replicas with the chart's default requests.
+modelCache:
+  type: emptyDir
+  size: 40Gi

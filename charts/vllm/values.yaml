@@ -1,0 +1,152 @@
+# Defaults are for one replica on one dedicated GPU.
+# The lab profile in serving/vllm/values.yaml overrides them for GPU time-slicing + autoscaling.
+
+replicaCount: 1
+
+image:
+  repository: vllm/vllm-openai
+  # The default image is built against CUDA 13 and needs NVIDIA driver >= 580.
+  # On older drivers use the "-cu129" variant, e.g. v0.32.0-cu129.
+  tag: v0.32.0
+  pullPolicy: IfNotPresent
+
+model:
+  # Hugging Face repo id. Ungated, so no token is needed.
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  # Pin a commit for reproducible benchmarks. Empty means the tip of main.
+  revision: ""
+  # Name clients pass as "model" in the OpenAI API.
+  servedName: qwen2.5-1.5b
+  dtype: auto
+  maxModelLen: 8192
+  # Share of total GPU memory this process may claim (weights + KV cache + activations).
+  # Lower it when several replicas share one GPU through time-slicing.
+  gpuMemoryUtilization: 0.90
+  maxNumSeqs: 128
+  extraArgs: []
+
+# Container entrypoint. Empty args = the vLLM arguments built from `model` above.
+# The no-GPU dev environment swaps in the fake vLLM this way (serving/vllm/values-dev.yaml).
+command: ["vllm", "serve"]
+args: []
+extraVolumes: []
+extraVolumeMounts: []
+
+# Optional secrets, read from existing Secrets in the release namespace.
+hfToken:
+  existingSecret: ""
+  key: HF_TOKEN
+apiKey:
+  existingSecret: ""
+  key: VLLM_API_KEY
+
+env: []
+
+service:
+  type: ClusterIP
+  port: 8000
+
+resources:
+  requests:
+    cpu: "2"
+    memory: 8Gi
+  limits:
+    memory: 12Gi
+    nvidia.com/gpu: 1
+
+# PyTorch/NCCL shared memory. Counts against the memory limit.
+shm:
+  sizeLimit: 2Gi
+
+# Hugging Face weights and the vLLM torch.compile cache live under /root/.cache.
+modelCache:
+  # emptyDir: download again on every pod start.
+  # pvc: survives restarts, which cuts cold start roughly in half (needs a StorageClass).
+  type: emptyDir
+  size: 40Gi
+  storageClassName: ""
+  accessMode: ReadWriteOnce
+
+probes:
+  startup:
+    periodSeconds: 10
+    # Covers model download + weight loading + CUDA graph capture (not the image pull).
+    failureThreshold: 90
+  readiness:
+    periodSeconds: 5
+    failureThreshold: 3
+  liveness:
+    periodSeconds: 15
+    timeoutSeconds: 5
+    failureThreshold: 4
+
+# Give in-flight streams time to finish before SIGKILL.
+terminationGracePeriodSeconds: 120
+# Keep serving while the endpoint is removed from Services and proxies.
+preStopSleepSeconds: 15
+
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    # A surge pod needs a free GPU (or a free time-slice).
+    # Without spare capacity use maxSurge: 0 / maxUnavailable: 1, and accept a short outage.
+    maxSurge: 1
+    maxUnavailable: 0
+
+runtimeClassName: ""
+priorityClassName: ""
+
+# Label set by the GPU Operator on nodes with an NVIDIA GPU.
+nodeSelector:
+  nvidia.com/gpu.present: "true"
+
+tolerations:
+  - key: nvidia.com/gpu
+    operator: Exists
+    effect: NoSchedule
+
+affinity: {}
+
+# Spread replicas across GPU nodes when there is more than one.
+topologySpread:
+  enabled: true
+  maxSkew: 1
+
+podAnnotations: {}
+podLabels: {}
+
+podDisruptionBudget:
+  enabled: true
+  # maxUnavailable rather than minAvailable: with one replica, minAvailable: 1 blocks every node drain.
+  maxUnavailable: 1
+
+serviceMonitor:
+  enabled: true
+  interval: 15s
+  scrapeTimeout: 10s
+  labels: {}
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  # Target in-flight requests (running + waiting) per replica.
+  # Calibrate with the load test: the highest concurrency where p95 TTFT still meets the SLO.
+  targetInFlightPerReplica: 32
+  prometheusAddress: http://kube-prometheus-stack-prometheus.monitoring.svc:9090
+  pollingInterval: 15
+  cooldownPeriod: 300
+  scaleDownStabilizationSeconds: 600
+
+networkPolicy:
+  enabled: false
+  # Namespaces allowed to reach the API besides the release namespace (Prometheus scrapes /metrics).
+  allowedNamespaces:
+    - monitoring
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault

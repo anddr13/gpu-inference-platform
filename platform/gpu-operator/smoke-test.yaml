@@ -1,0 +1,21 @@
+# Proves the scheduling + device injection path end to end: the pod asks for nvidia.com/gpu,
+# lands on a GPU node and runs a CUDA kernel. Expect "Test PASSED" in the logs.
+apiVersion: v1
+kind: Pod
+metadata:
+  name: cuda-vectoradd
+  namespace: default
+spec:
+  restartPolicy: Never
+  nodeSelector:
+    nvidia.com/gpu.present: "true"
+  tolerations:
+    - key: nvidia.com/gpu
+      operator: Exists
+      effect: NoSchedule
+  containers:
+    - name: cuda-vectoradd
+      image: nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0
+      resources:
+        limits:
+          nvidia.com/gpu: 1

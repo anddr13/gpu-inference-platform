@@ -1,0 +1,101 @@
+# NVIDIA GPU Operator, chart v26.7.2.
+#
+# Mode: pre-installed driver + container toolkit.
+#   k3s:  infra/k3s/bootstrap.sh installs both on the host and makes "nvidia" the default runtime.
+#   EKS:  the AL2023_x86_64_NVIDIA AMI ships both.
+# The operator then owns everything above the driver: device plugin, GPU Feature Discovery,
+# DCGM exporter, MIG manager, validation and GPU sharing config.
+# See docs/adr/0001-gpu-operator.md for the operator-managed driver variant.
+
+driver:
+  enabled: false
+
+toolkit:
+  enabled: false
+
+# CDI needs CDI specs from the operator-managed toolkit. With a host-installed toolkit and
+# "nvidia" as the default runtime, the classic env-var device injection is the predictable path.
+cdi:
+  enabled: false
+
+devicePlugin:
+  config:
+    create: true
+    name: device-plugin-config
+    # Applied to every GPU node. Override per node with the label nvidia.com/device-plugin.config=<key>.
+    default: time-sliced-3
+    data:
+      # One GPU = one schedulable nvidia.com/gpu. Production default for latency-sensitive serving.
+      exclusive: |-
+        version: v1
+        flags:
+          migStrategy: none
+      # Each physical GPU is advertised as 3 nvidia.com/gpu. No memory or fault isolation:
+      # replicas must split GPU memory themselves (vLLM --gpu-memory-utilization).
+      # Single-GPU lab: up to 2 serving replicas (KEDA max) + 1 free slot for the rolling-update
+      # surge pod. With only 2 slots, a rollout at max replicas waits forever for a GPU.
+      time-sliced-3: |-
+        version: v1
+        flags:
+          migStrategy: none
+        sharing:
+          timeSlicing:
+            renameByDefault: false
+            failRequestsGreaterThanOne: true
+            resources:
+              - name: nvidia.com/gpu
+                replicas: 3
+
+dcgmExporter:
+  config:
+    create: true
+    name: dcgm-metrics
+    data: |-
+      # DCGM FIELD, Prometheus metric type, help message
+      # Utilization
+      DCGM_FI_DEV_GPU_UTIL,      gauge, GPU utilization (in %).
+      DCGM_FI_DEV_MEM_COPY_UTIL, gauge, Memory utilization (in %).
+      # Datacenter profiling (DCP): Volta+ datacenter GPUs only (T4, L4, A10G, A100, H100...)
+      DCGM_FI_PROF_GR_ENGINE_ACTIVE,   gauge, Ratio of time the graphics engine is active.
+      DCGM_FI_PROF_SM_ACTIVE,          gauge, The ratio of cycles an SM has at least 1 warp assigned.
+      DCGM_FI_PROF_SM_OCCUPANCY,       gauge, The ratio of number of warps resident on an SM.
+      DCGM_FI_PROF_PIPE_TENSOR_ACTIVE, gauge, Ratio of cycles the tensor (HMMA) pipe is active.
+      DCGM_FI_PROF_DRAM_ACTIVE,        gauge, Ratio of cycles the device memory interface is active sending or receiving data.
+      DCGM_FI_PROF_PCIE_TX_BYTES,      gauge, The rate of data transmitted over the PCIe bus in bytes per second.
+      DCGM_FI_PROF_PCIE_RX_BYTES,      gauge, The rate of data received over the PCIe bus in bytes per second.
+      # Memory
+      DCGM_FI_DEV_FB_FREE,     gauge, Framebuffer memory free (in MiB).
+      DCGM_FI_DEV_FB_USED,     gauge, Framebuffer memory used (in MiB).
+      DCGM_FI_DEV_FB_RESERVED, gauge, Framebuffer memory reserved (in MiB).
+      # Thermals, power, clocks
+      DCGM_FI_DEV_GPU_TEMP,                 gauge,   GPU temperature (in C).
+      DCGM_FI_DEV_MEMORY_TEMP,              gauge,   Memory temperature (in C).
+      DCGM_FI_DEV_POWER_USAGE,              gauge,   Power draw (in W).
+      DCGM_FI_DEV_TOTAL_ENERGY_CONSUMPTION, counter, Total energy consumption since the driver was last reloaded (in mJ).
+      DCGM_FI_DEV_SM_CLOCK,                 gauge,   SM clock frequency (in MHz).
+      DCGM_FI_DEV_MEM_CLOCK,                gauge,   Memory clock frequency (in MHz).
+      DCGM_FI_DEV_POWER_VIOLATION,          counter, Throttling duration due to power constraints (in ns).
+      DCGM_FI_DEV_THERMAL_VIOLATION,        counter, Throttling duration due to thermal constraints (in ns).
+      # Errors and health
+      DCGM_FI_DEV_XID_ERRORS,                  gauge,   Value of the last XID error encountered.
+      DCGM_FI_DEV_PCIE_REPLAY_COUNTER,         counter, Total number of PCIe retries.
+      DCGM_FI_DEV_UNCORRECTABLE_REMAPPED_ROWS, counter, Number of remapped rows for uncorrectable errors.
+      DCGM_FI_DEV_CORRECTABLE_REMAPPED_ROWS,   counter, Number of remapped rows for correctable errors.
+      DCGM_FI_DEV_ROW_REMAP_FAILURE,           gauge,   Whether remapping of rows has failed.
+      # Static info, exposed as a label on every series
+      DCGM_FI_DRIVER_VERSION, label, Driver Version
+  serviceMonitor:
+    enabled: true
+    interval: 15s
+    # Keep false: the exporter's own pod/namespace labels win, and the GPU's workload
+    # lands in exported_pod / exported_namespace / exported_container.
+    honorLabels: false
+    relabelings:
+      # Dashboards and alerts key on the Kubernetes node name, not the exporter pod IP.
+      - sourceLabels: [__meta_kubernetes_pod_node_name]
+        targetLabel: node
+        action: replace
+
+# Node Feature Discovery finds NVIDIA PCI devices (vendor 10de); the operator only targets nodes it labels.
+nfd:
+  enabled: true

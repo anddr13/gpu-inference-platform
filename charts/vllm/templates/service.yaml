@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "vllm.fullname" . }}
+  labels:
+    {{- include "vllm.labels" . | nindent 4 }}
+    # The ServiceMonitor uses this as the Prometheus job name, so every release scrapes as job="vllm".
+    llm.platform/engine: vllm
+spec:
+  type: {{ .Values.service.type }}
+  selector:
+    {{- include "vllm.selectorLabels" . | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ .Values.service.port }}
+      targetPort: http
+      protocol: TCP
