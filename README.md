@@ -1,8 +1,11 @@
 # GPU Inference Platform
 
+[![ci](https://github.com/anddr13/gpu-inference-platform/actions/workflows/ci.yaml/badge.svg)](https://github.com/anddr13/gpu-inference-platform/actions/workflows/ci.yaml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Production-style LLM serving on Kubernetes: **NVIDIA GPU Operator**, **vLLM**, **KEDA**,
 **Prometheus + Grafana** with SLOs, burn-rate alerts and runbooks. Runs on one GPU machine (k3s) or on
-AWS EKS with Spot GPU nodes (Terraform). Everything is code, and the alert rules have promtool unit tests.
+AWS EKS with Spot or on-demand GPU nodes (Terraform). Everything is code, and the alert rules have promtool unit tests.
 
 ## What this project demonstrates
 
