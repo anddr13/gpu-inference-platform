@@ -8,6 +8,8 @@ image:
   # The default image is built against CUDA 13 and needs NVIDIA driver >= 580.
   # On older drivers use the "-cu129" variant, e.g. v0.32.0-cu129.
   tag: v0.32.0
+  # Pinned: a tag can be re-pushed, a digest cannot. Empty = tag only.
+  digest: sha256:befccf0e7e4089aa23926bb6f887a85c0d46c2a99e6de5c5ffdf5cb7957c5b34
   pullPolicy: IfNotPresent
 
 model:

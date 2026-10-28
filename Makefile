@@ -112,7 +112,7 @@ gpu-test: require-kubeconfig ## Run a CUDA vector-add pod on a GPU node
 
 .PHONY: smoke
 smoke: require-kubeconfig ## One chat completion from inside the cluster
-	kubectl -n $(NS) run curl-smoke --rm -i --restart=Never --image=curlimages/curl:8.16.0 -- \
+	kubectl -n $(NS) run curl-smoke --rm -i --restart=Never --image=curlimages/curl:8.16.0@sha256:463eaf6072688fe96ac64fa623fe73e1dbe25d8ad6c34404a669ad3ce1f104b6 -- \
 	  curl -sS --max-time 120 http://vllm.$(NS).svc:8000/v1/chat/completions \
 	  -H 'Content-Type: application/json' \
 	  -d '{"model":"$(MODEL)","messages":[{"role":"user","content":"Explain a Kubernetes PodDisruptionBudget in one sentence."}],"max_tokens":80}'
