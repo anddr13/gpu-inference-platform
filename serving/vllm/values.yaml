@@ -1,6 +1,7 @@
-# Lab profile for real GPUs (k3s and EKS). One 24 GB GPU is time-sliced into 3 slots
-# (GPU Operator config "time-sliced-3"): KEDA runs 1-2 replicas and the third slot stays free,
-# so a rolling update can always start its surge pod (N+1).
+# Shared profile for real GPUs. As is, it fits a single-GPU k3s lab: one 24 GB GPU time-sliced into
+# 3 slots (GPU Operator config "time-sliced-3"), KEDA runs 1-2 replicas and the third slot stays free
+# so a rolling update can always start its surge pod (N+1). Time-slicing costs throughput (measured:
+# docs/benchmarks.md), so values-eks.yaml switches to one replica per whole GPU.
 
 model:
   name: Qwen/Qwen2.5-1.5B-Instruct
@@ -26,7 +27,9 @@ autoscaling:
   enabled: true
   minReplicas: 1
   maxReplicas: 2
-  targetInFlightPerReplica: 24
+  # Calibrated from experiment 1 (A10G): two time-sliced replicas met every SLO at 96 in-flight
+  # requests, 48 per replica (ITL p95 38 ms). Minus ~20% headroom.
+  targetInFlightPerReplica: 40
 
 serviceMonitor:
   interval: 10s

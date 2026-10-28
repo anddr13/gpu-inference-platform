@@ -1,6 +1,31 @@
-# EKS: no EBS CSI driver in this lab, so the model cache is node-local scratch space
-# on the 200 GB GPU node root volume. g6.2xlarge / g5.2xlarge (8 vCPU, 32 GiB) fit both
-# replicas with the chart's default requests.
+# EKS: one vLLM replica per whole GPU (device plugin config "exclusive", set in helmfile.yaml.gotmpl).
+# Measured on an A10G: +36-63% tokens/s and 37-44% lower inter-token latency than two time-sliced
+# replicas at 48-96 concurrent requests (docs/benchmarks.md, experiment 2).
+
+model:
+  gpuMemoryUtilization: 0.90
+  # Same batch slots as two time-sliced replicas x 64.
+  maxNumSeqs: 128
+
+autoscaling:
+  # Calibrated from experiment 2: one exclusive replica met every SLO at 96 in-flight requests
+  # (TTFT p95 2.01 s, ITL p95 23 ms). Target = 96 minus ~20% headroom for the minutes a new replica needs.
+  targetInFlightPerReplica: 76
+  # A second replica needs a second GPU node. Nothing provisions it automatically yet:
+  # `make gpu-nodes N=2` (within the G-instance vCPU quota), Karpenter on the roadmap.
+  maxReplicas: 2
+
+# No spare GPU for a surge pod: replace in place, a short gap with one replica.
+# With replicas 1 and maxUnavailable 1, `helm --wait` returns before the new pod is Ready;
+# follow with `kubectl -n llm rollout status deploy/vllm`.
+strategy:
+  type: RollingUpdate
+  rollingUpdate:
+    maxSurge: 0
+    maxUnavailable: 1
+
+# No EBS CSI driver in this lab, so the model cache is node-local scratch space on the 200 GB
+# GPU node root volume.
 modelCache:
   type: emptyDir
   size: 40Gi

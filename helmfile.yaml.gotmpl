@@ -56,6 +56,13 @@ releases:
       - monitoring/kube-prometheus-stack
     values:
       - platform/gpu-operator/values.yaml
+{{- if eq .Environment.Name "eks" }}
+      # One replica per whole GPU: measured +36-63% tokens/s over time-slicing (docs/benchmarks.md).
+      # Time-slicing stays the default only for single-GPU k3s labs, where it buys the rollout surge slot.
+      - devicePlugin:
+          config:
+            default: exclusive
+{{- end }}
 
   - name: keda
     namespace: keda

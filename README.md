@@ -22,6 +22,9 @@ AWS EKS with Spot or on-demand GPU nodes (Terraform). Everything is code, and th
 
 ## Architecture
 
+The single-GPU k3s lab profile. On EKS each replica gets a whole GPU instead (`exclusive`), because the
+benchmark measured what time-slicing costs.
+
 ```mermaid
 flowchart LR
     client["Clients / load test Job"] -->|"OpenAI API :8000"| svc["Service vllm"]

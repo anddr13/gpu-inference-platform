@@ -27,7 +27,7 @@ command, and the raw JSON goes to `results/` (`--json results/<date>-<name>.json
 
 ## Experiment 1: concurrency sweep with KEDA on
 
-Lab profile as deployed: KEDA scales 1-2 replicas at 24 in-flight requests per replica, both replicas
+Lab profile as deployed on that day: KEDA scales 1-2 replicas at 24 in-flight requests per replica, both replicas
 time-share the one A10G.
 
 | Concurrency | Replicas | req/s | out tok/s | TTFT p50 | TTFT p95 | ITL p50 ms | ITL p95 ms | E2E p95 | SLO |

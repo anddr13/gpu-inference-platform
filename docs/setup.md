@@ -125,7 +125,7 @@ The lab kubeconfig is a separate file, so `kubectl` in other terminals stays on 
 ## Verify, layer by layer
 
 ```bash
-make gpu-status   # node has nvidia.com/gpu.product, allocatable nvidia.com/gpu = 3 (time-sliced)
+make gpu-status   # node has nvidia.com/gpu.product, allocatable nvidia.com/gpu = 3 on k3s (time-sliced), 1 on EKS (exclusive)
 make gpu-test     # CUDA vector add: "Test PASSED"
 kubectl -n llm rollout status deploy/vllm --timeout=20m
 make smoke        # one chat completion

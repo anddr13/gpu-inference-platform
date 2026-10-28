@@ -1,6 +1,7 @@
 # ADR 0003: GPU sharing through time-slicing (lab only)
 
-Status: accepted for the lab; production uses exclusive GPUs
+Status: accepted for the single-GPU k3s lab only. Since 2026-10-26 EKS runs exclusive GPUs, after the
+benchmark below measured what time-slicing costs
 
 ## Context
 
