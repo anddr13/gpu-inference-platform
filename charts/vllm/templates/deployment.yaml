@@ -29,6 +29,10 @@ spec:
       # Kubernetes injects VLLM_PORT=tcp://<ip>:8000 for a Service named "vllm".
       # vLLM reads VLLM_PORT for its own use and refuses to start, so service links stay off.
       enableServiceLinks: false
+      # vLLM never talks to the Kubernetes API.
+      automountServiceAccountToken: false
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
       terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
       {{- with .Values.runtimeClassName }}
       runtimeClassName: {{ . }}
@@ -83,6 +87,10 @@ spec:
             {{- end }}
             {{- end }}
           env:
+            - name: HOME
+              value: {{ .Values.home | quote }}
+            - name: USER
+              value: vllm
             {{- if .Values.hfToken.existingSecret }}
             - name: HF_TOKEN
               valueFrom:
@@ -133,14 +141,19 @@ spec:
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
           volumeMounts:
+            - name: home
+              mountPath: {{ .Values.home }}
             - name: cache
-              mountPath: /root/.cache
+              mountPath: {{ .Values.home }}/.cache
             - name: shm
               mountPath: /dev/shm
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
       volumes:
+        - name: home
+          emptyDir:
+            sizeLimit: 1Gi
         - name: cache
           {{- if eq .Values.modelCache.type "pvc" }}
           persistentVolumeClaim:

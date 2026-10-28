@@ -58,7 +58,7 @@ resources:
 shm:
   sizeLimit: 2Gi
 
-# Hugging Face weights and the vLLM torch.compile cache live under /root/.cache.
+# Hugging Face weights and the vLLM / torch.compile caches live under $HOME/.cache.
 modelCache:
   # emptyDir: download again on every pod start.
   # pvc: survives restarts, which cuts cold start roughly in half (needs a StorageClass).
@@ -143,6 +143,17 @@ networkPolicy:
   # Namespaces allowed to reach the API besides the release namespace (Prometheus scrapes /metrics).
   allowedNamespaces:
     - monitoring
+
+# Non-root. The vllm/vllm-openai image ships a `vllm` user (UID 2000); HOME gets its own writable
+# emptyDir and USER is set, because torch.compile resolves the user name for its cache directory.
+home: /home/vllm
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 2000
+  runAsGroup: 2000
+  fsGroup: 2000
+  seccompProfile:
+    type: RuntimeDefault
 
 securityContext:
   allowPrivilegeEscalation: false
