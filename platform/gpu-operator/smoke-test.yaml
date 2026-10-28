@@ -7,6 +7,13 @@ metadata:
   namespace: default
 spec:
   restartPolicy: Never
+  automountServiceAccountToken: false
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 1000
+    runAsGroup: 1000
+    seccompProfile:
+      type: RuntimeDefault
   nodeSelector:
     nvidia.com/gpu.present: "true"
   tolerations:
@@ -16,6 +23,11 @@ spec:
   containers:
     - name: cuda-vectoradd
       image: nvcr.io/nvidia/k8s/cuda-sample:vectoradd-cuda12.5.0@sha256:7c7540bdf1f942d4fb6db97069fd6c289471b54ac29e3c7fcdf914cf77af7d41
+      securityContext:
+        readOnlyRootFilesystem: true
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
       resources:
         limits:
           nvidia.com/gpu: 1

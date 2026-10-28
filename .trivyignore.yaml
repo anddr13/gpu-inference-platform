@@ -1,0 +1,10 @@
+# Accepted Trivy findings, each with the reason. Everything else at HIGH/CRITICAL fails CI.
+misconfigurations:
+  - id: AWS-0040
+    statement: >-
+      The EKS public endpoint is how the lab is operated from a laptop. It is restricted to
+      api_allowed_cidrs (validated: never 0.0.0.0/0); nodes and controllers use the private endpoint.
+  - id: AWS-0104
+    statement: >-
+      Nodes need egress to the internet through the NAT gateway to pull images (Docker Hub, nvcr.io,
+      quay.io) and model weights from Hugging Face. A lab without a pull-through cache or VPC endpoints.

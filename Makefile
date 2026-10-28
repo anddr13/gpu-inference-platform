@@ -150,7 +150,7 @@ api: require-kubeconfig ## vLLM OpenAI API on http://localhost:8000
 ##@ Quality gates (same as CI)
 
 .PHONY: lint
-lint: lint-charts test-rules lint-python check-dashboards ## Everything CI runs, except Terraform
+lint: lint-charts test-rules lint-python check-dashboards security ## Everything CI runs, except Terraform and e2e
 
 .PHONY: lint-charts
 lint-charts: ## helm lint + kubeconform on rendered manifests
@@ -160,6 +160,16 @@ lint-charts: ## helm lint + kubeconform on rendered manifests
 	  | kubeconform -strict -summary $(KUBECONFORM_SCHEMAS)
 	helm template llm-observability charts/llm-observability -n monitoring \
 	  | kubeconform -strict -summary $(KUBECONFORM_SCHEMAS)
+
+TRIVY := docker run --rm -v $(CURDIR):/repo -w /repo aquasec/trivy:0.76.1 config --severity HIGH,CRITICAL   --ignorefile .trivyignore.yaml --exit-code 1
+
+.PHONY: security
+security: ## Trivy misconfiguration scan: rendered manifests (all envs) + Terraform
+	mkdir -p .rendered
+	for e in eks k3s dev; do 	  helm template vllm charts/vllm -n $(NS) -f serving/vllm/values.yaml -f serving/vllm/values-$$e.yaml > .rendered/vllm-$$e.yaml; 	done
+	cp loadtest/job.yaml platform/gpu-operator/smoke-test.yaml .rendered/
+	$(TRIVY) .rendered
+	$(TRIVY) --skip-dirs infra/aws-eks/.terraform infra
 
 .PHONY: test-rules
 test-rules: ## promtool check + unit tests for alerts and recording rules

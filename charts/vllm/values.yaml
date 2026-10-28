@@ -157,7 +157,10 @@ podSecurityContext:
   seccompProfile:
     type: RuntimeDefault
 
+# Read-only root filesystem: vLLM writes only to HOME (caches), /tmp (torch inductor) and /dev/shm.
+# If a future vLLM writes elsewhere and fails at startup, find the path in the log and mount it.
 securityContext:
+  readOnlyRootFilesystem: true
   allowPrivilegeEscalation: false
   capabilities:
     drop: ["ALL"]

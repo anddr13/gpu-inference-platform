@@ -46,6 +46,17 @@ jobs:
       - run: helmfile -e k3s template > /dev/null
       - run: helmfile -e eks template > /dev/null
 
+  # Misconfiguration scan of rendered manifests and Terraform. HIGH/CRITICAL fail the build unless
+  # accepted with a reason in .trivyignore.yaml.
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: azure/setup-helm@v4
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - run: make security
+
   rules:
     runs-on: ubuntu-latest
     steps:
@@ -73,7 +84,7 @@ jobs:
   e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    needs: [charts, helmfile, rules, python]
+    needs: [charts, helmfile, rules, python, security]
     steps:
       - uses: actions/checkout@v5
       - uses: azure/setup-helm@v4

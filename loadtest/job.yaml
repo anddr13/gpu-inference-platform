@@ -17,13 +17,20 @@ spec:
         app.kubernetes.io/name: llm-load
     spec:
       restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: load
           image: python:3.13-slim@sha256:2d44738ebf4ce5f63b9d9ea871e9c7cfdc0426f7b0c97cac915fd88ded1d86bb
           command: ["sh", "-c"]
           args:
             - >-
-              pip install --quiet --no-cache-dir httpx==0.28.1 &&
+              pip install --quiet --no-cache-dir --target /tmp/deps httpx==0.28.1 &&
               python /app/llm_load.py
               --base-url "$BASE_URL" --model "$MODEL"
               --stages "$STAGES" --stage-duration "$STAGE_DURATION"
@@ -44,16 +51,30 @@ spec:
               value: "256"
             - name: PYTHONUNBUFFERED
               value: "1"
+            # Non-root with a read-only root filesystem: pip installs into the /tmp emptyDir.
+            - name: PYTHONPATH
+              value: /tmp/deps
+            - name: HOME
+              value: /tmp
           resources:
             requests:
               cpu: 500m
               memory: 256Mi
             limits:
               memory: 512Mi
+          securityContext:
+            readOnlyRootFilesystem: true
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
           volumeMounts:
             - name: script
               mountPath: /app
+            - name: tmp
+              mountPath: /tmp
       volumes:
+        - name: tmp
+          emptyDir: {}
         - name: script
           configMap:
             name: llm-load-script

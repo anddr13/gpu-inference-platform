@@ -147,6 +147,8 @@ spec:
               mountPath: {{ .Values.home }}/.cache
             - name: shm
               mountPath: /dev/shm
+            - name: tmp
+              mountPath: /tmp
             {{- with .Values.extraVolumeMounts }}
             {{- toYaml . | nindent 12 }}
             {{- end }}
@@ -166,6 +168,9 @@ spec:
           emptyDir:
             medium: Memory
             sizeLimit: {{ .Values.shm.sizeLimit }}
+        - name: tmp
+          emptyDir:
+            sizeLimit: 4Gi
         {{- with .Values.extraVolumes }}
         {{- toYaml . | nindent 8 }}
         {{- end }}

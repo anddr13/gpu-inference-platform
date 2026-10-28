@@ -25,9 +25,13 @@ variable "vpc_cidr" {
 }
 
 variable "api_allowed_cidrs" {
-  description = "CIDRs allowed to reach the public EKS API endpoint. Narrow this to your IP."
+  description = "CIDRs allowed to reach the public EKS API endpoint: your IP as x.x.x.x/32. No default on purpose."
   type        = list(string)
-  default     = ["0.0.0.0/0"]
+
+  validation {
+    condition     = length(var.api_allowed_cidrs) > 0 && !contains(var.api_allowed_cidrs, "0.0.0.0/0")
+    error_message = "Set api_allowed_cidrs to your own IP (x.x.x.x/32); the API must not be open to 0.0.0.0/0."
+  }
 }
 
 variable "system_instance_types" {

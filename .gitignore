@@ -17,3 +17,6 @@ __pycache__/
 # Local kubeconfigs
 *.kubeconfig
 kubeconfig*
+
+# make security
+.rendered/
