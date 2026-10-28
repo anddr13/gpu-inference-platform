@@ -116,6 +116,9 @@ jobs:
       - run: terraform -chdir=infra/aws-eks fmt -check
       - run: terraform -chdir=infra/aws-eks init -backend=false -input=false
       - run: terraform -chdir=infra/aws-eks validate
+      - run: terraform -chdir=infra/state fmt -check
+      - run: terraform -chdir=infra/state init -backend=false -input=false
+      - run: terraform -chdir=infra/state validate
 
   shell:
     runs-on: ubuntu-latest

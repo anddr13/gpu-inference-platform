@@ -152,6 +152,18 @@ else
   bad "no add-ons for $K8S_VERSION: change kubernetes_version"
 fi
 
+echo "== Remote state"
+if [[ -f backend.hcl ]]; then
+  bucket=$(sed -nE 's/^[[:space:]]*bucket[[:space:]]*=[[:space:]]*"([^"]+)".*//p' backend.hcl)
+  if aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
+    ok "state bucket $bucket"
+  else
+    bad "backend.hcl names bucket $bucket, which this account cannot reach: make state-up"
+  fi
+else
+  bad "no backend.hcl: run make state-up once (S3 bucket for Terraform state)"
+fi
+
 echo "== Guard rails in terraform.tfvars"
 if [[ -f terraform.tfvars ]]; then
   if grep -qE '^[[:space:]]*budget_alert_email[[:space:]]*=.*example\.com' terraform.tfvars; then

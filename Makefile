@@ -31,6 +31,7 @@ export AWS_PROFILE
 # them once would fail mid-apply. Works for any login method (aws login, SSO, access keys).
 TF_PROFILE := $(AWS_PROFILE)-terraform
 TF := AWS_PROFILE=$(TF_PROFILE) terraform -chdir=infra/aws-eks
+TF_STATE := AWS_PROFILE=$(TF_PROFILE) terraform -chdir=infra/state
 
 PROM_IMAGE := prom/prometheus:v3.15.1
 PROMTOOL   ?= $(shell command -v promtool 2>/dev/null || echo "docker run --rm -v $(CURDIR):/repo -w /repo --entrypoint promtool $(PROM_IMAGE)")
@@ -169,7 +170,7 @@ security: ## Trivy misconfiguration scan: rendered manifests (all envs) + Terraf
 	for e in eks k3s dev; do 	  helm template vllm charts/vllm -n $(NS) -f serving/vllm/values.yaml -f serving/vllm/values-$$e.yaml > .rendered/vllm-$$e.yaml; 	done
 	cp loadtest/job.yaml platform/gpu-operator/smoke-test.yaml .rendered/
 	$(TRIVY) .rendered
-	$(TRIVY) --skip-dirs infra/aws-eks/.terraform infra
+	$(TRIVY) --skip-dirs infra/aws-eks/.terraform --skip-dirs infra/state/.terraform infra
 
 .PHONY: test-rules
 test-rules: ## promtool check + unit tests for alerts and recording rules
@@ -202,9 +203,18 @@ aws-tf-profile:
 	  "aws configure export-credentials --profile $(AWS_PROFILE) --region $(REGION) --format process"
 	@aws configure set profile.$(TF_PROFILE).region $(REGION)
 
+.PHONY: state-up
+state-up: aws-tf-profile ## Once per account: S3 bucket for Terraform state, writes infra/aws-eks/backend.hcl
+	$(TF_STATE) init -input=false
+	$(TF_STATE) apply
+	printf 'bucket       = "%s"\nkey          = "gpu-inference-platform/eks.tfstate"\nregion       = "$(REGION)"\nuse_lockfile = true\nencrypt      = true\n' \
+	  "$$($(TF_STATE) output -raw bucket)" > infra/aws-eks/backend.hcl
+	@echo "Wrote infra/aws-eks/backend.hcl"
+
 .PHONY: eks-up
 eks-up: eks-preflight aws-tf-profile ## preflight + terraform apply + a separate kubeconfig for the lab cluster
-	$(TF) init -input=false
+	@# -migrate-state moves any earlier local state into S3 on the first run; later runs are no-ops.
+	$(TF) init -input=false -backend-config=backend.hcl -migrate-state -force-copy
 	$(TF) apply
 	aws eks update-kubeconfig --region $(REGION) --name $(CLUSTER) --kubeconfig $(EKS_KUBECONFIG) --profile $(AWS_PROFILE)
 	@echo; echo "Cluster ready. export KUBECONFIG=$(EKS_KUBECONFIG)   then: make platform ENV=eks"

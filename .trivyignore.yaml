@@ -8,3 +8,7 @@ misconfigurations:
     statement: >-
       Nodes need egress to the internet through the NAT gateway to pull images (Docker Hub, nvcr.io,
       quay.io) and model weights from Hugging Face. A lab without a pull-through cache or VPC endpoints.
+  - id: AWS-0132
+    statement: >-
+      Applies to the only S3 bucket here, the Terraform state bucket (infra/state). It uses SSE-S3 (AES256), is private, versioned and TLS-only. A customer managed KMS key
+      adds $1/month and key administration with no gain for a single-person lab account.

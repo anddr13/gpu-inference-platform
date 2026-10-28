@@ -103,7 +103,9 @@ driver 580 runs the CUDA 13 vLLM image.
 3. **Tools in WSL**: aws cli v2, terraform, kubectl, helm + helm-diff, helmfile.
 4. **tfvars**: `cp infra/aws-eks/terraform.tfvars.example infra/aws-eks/terraform.tfvars`, then set your IP
    in `api_allowed_cidrs` and your address in `budget_alert_email`.
-5. `make eks-preflight` until it passes. It checks the account, GPU types per zone, the quota, the current
+5. **Remote state**: `make state-up` creates a private, versioned, encrypted S3 bucket for the
+   Terraform state (infra/state) and writes `infra/aws-eks/backend.hcl`. Locking uses S3's native lock file.
+6. `make eks-preflight` until it passes. It checks the account, GPU types per zone, the quota, the current
    Spot price, the EKS version, the tfvars placeholders and leftovers from earlier sessions. It only reads.
 
 ### One session

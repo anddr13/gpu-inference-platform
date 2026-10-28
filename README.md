@@ -24,7 +24,7 @@ AWS EKS with Spot or on-demand GPU nodes (Terraform). Everything is code, and th
 | Autoscaling on an LLM-specific signal (in-flight requests), calibrated by load testing | `charts/vllm/templates/scaledobject.yaml`, [ADR 0004](docs/adr/0004-autoscaling-signal.md) |
 | Observability: DCGM + vLLM dashboards as code, recording rules, cost per 1M tokens | `observability/`, `charts/llm-observability/` |
 | SRE: two SLOs, multi-window burn-rate alerts, runbook per alert, failure drills | [SLOs](docs/slo.md), [runbooks](docs/runbooks.md), [drills](docs/drills.md) |
-| Infrastructure as code: EKS, Spot GPU node group with taints, AL2023 NVIDIA AMI; cost guard rails: read-only preflight (quota, Spot price, placeholders), AWS Budget alert, leftovers check after destroy | `infra/aws-eks/` |
+| Infrastructure as code: EKS, GPU node group with taints, AL2023 NVIDIA AMI, remote state in S3 with native locking; cost guard rails: read-only preflight (quota, Spot price, placeholders), AWS Budget alert, leftovers check after destroy | `infra/aws-eks/` |
 | Quality gates: helm lint, kubeconform (CRDs too), promtool unit tests, helmfile render against upstream charts, terraform validate, shellcheck | `.github/workflows/ci.yaml`, `make lint` |
 | End-to-end test without a GPU: the whole platform on kind with a fake vLLM that exports vLLM's real metrics; CI proves scraping, rules, dashboards, KEDA scale-out and a burn-rate alert | `make dev-up e2e`, `tests/e2e/`, `loadtest/fake_vllm.py` |
 

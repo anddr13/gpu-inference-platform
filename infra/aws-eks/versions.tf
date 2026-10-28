@@ -8,13 +8,9 @@ terraform {
     }
   }
 
-  # Lab default: local state. For a team, switch to S3 with native locking:
-  # backend "s3" {
-  #   bucket       = "my-tf-state"
-  #   key          = "gpu-inference-platform/eks.tfstate"
-  #   region       = "eu-north-1"
-  #   use_lockfile = true
-  # }
+  # Remote state in S3 with native locking (no DynamoDB). Partial config: `make state-up` creates the
+  # bucket (infra/state) and writes backend.hcl, which `make eks-up` passes to `terraform init`.
+  backend "s3" {}
 }
 
 provider "aws" {
