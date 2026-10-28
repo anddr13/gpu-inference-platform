@@ -3,6 +3,7 @@
 #
 #   Availability: 99.5% of /v1/* calls do not return 5xx            -> budget 0.005
 #   Latency:      99%   of requests get the first token within 2.5s  -> budget 0.01
+#   Decode speed: 95%   of streamed tokens arrive within 50 ms of the previous one -> budget 0.05
 #
 # Burn rate 14.4 over 1h spends 2% of a 30-day budget; 6 over 6h spends 5%.
 groups:
@@ -77,6 +78,37 @@ groups:
             sum by (namespace, model_name) (rate(vllm:time_to_first_token_seconds_count[6h]))
           )
 
+      # Decode SLI, added after the A10G benchmark: TTFT never neared its SLO while inter-token
+      # latency tripled under load, so decode speed is what users of a small model feel first.
+      - record: slo:llm_itl_slow:ratio_rate5m
+        expr: |
+          1 - (
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_bucket{le="0.05"}[5m]))
+              /
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_count[5m]))
+          )
+      - record: slo:llm_itl_slow:ratio_rate30m
+        expr: |
+          1 - (
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_bucket{le="0.05"}[30m]))
+              /
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_count[30m]))
+          )
+      - record: slo:llm_itl_slow:ratio_rate1h
+        expr: |
+          1 - (
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_bucket{le="0.05"}[1h]))
+              /
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_count[1h]))
+          )
+      - record: slo:llm_itl_slow:ratio_rate6h
+        expr: |
+          1 - (
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_bucket{le="0.05"}[6h]))
+              /
+            sum by (namespace, model_name) (rate(vllm:inter_token_latency_seconds_count[6h]))
+          )
+
   - name: llm-slo.alerts
     rules:
       - alert: LLMAvailabilityBudgetFastBurn
@@ -130,3 +162,29 @@ groups:
           summary: "{{ $labels.model_name }} in {{ $labels.namespace }} burns the TTFT budget 6x too fast"
           description: "{{ $value | humanizePercentage }} of requests waited more than 2.5s for the first token over the last 6 hours (SLO 99%)."
           runbook_url: "__RUNBOOK_BASE__#llmlatencybudgetburn"
+
+      - alert: LLMDecodeLatencyBudgetFastBurn
+        expr: |
+          slo:llm_itl_slow:ratio_rate1h > (14.4 * 0.05)
+            and
+          slo:llm_itl_slow:ratio_rate5m > (14.4 * 0.05)
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: "{{ $labels.model_name }} in {{ $labels.namespace }} burns the decode-latency budget 14.4x too fast"
+          description: "{{ $value | humanizePercentage }} of streamed tokens took more than 50 ms over the last 1h (SLO 95%)."
+          runbook_url: "__RUNBOOK_BASE__#llmdecodelatencybudgetburn"
+
+      - alert: LLMDecodeLatencyBudgetSlowBurn
+        expr: |
+          slo:llm_itl_slow:ratio_rate6h > (6 * 0.05)
+            and
+          slo:llm_itl_slow:ratio_rate30m > (6 * 0.05)
+        for: 15m
+        labels:
+          severity: warning
+        annotations:
+          summary: "{{ $labels.model_name }} in {{ $labels.namespace }} burns the decode-latency budget 6x too fast"
+          description: "{{ $value | humanizePercentage }} of streamed tokens took more than 50 ms over the last 6h (SLO 95%)."
+          runbook_url: "__RUNBOOK_BASE__#llmdecodelatencybudgetburn"

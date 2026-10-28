@@ -106,3 +106,38 @@ tests:
         exp_samples:
           - labels: 'slo:llm_api_errors:ratio_rate5m{namespace="llm", service="vllm"}'
             value: 0
+
+  - name: 90% of token gaps over 50 ms -> decode-latency fast burn pages
+    interval: 1m
+    input_series:
+      - series: 'vllm:inter_token_latency_seconds_bucket{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0", le="0.05"}'
+        values: '0+100x90'
+      - series: 'vllm:inter_token_latency_seconds_count{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '0+1000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: LLMDecodeLatencyBudgetFastBurn
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              namespace: llm
+              model_name: qwen2.5-1.5b
+            exp_annotations:
+              summary: "qwen2.5-1.5b in llm burns the decode-latency budget 14.4x too fast"
+              description: "90% of streamed tokens took more than 50 ms over the last 1h (SLO 95%)."
+              runbook_url: "__RUNBOOK_BASE__#llmdecodelatencybudgetburn"
+
+  - name: 3% of token gaps over 50 ms stays inside the 5% decode budget
+    interval: 1m
+    input_series:
+      - series: 'vllm:inter_token_latency_seconds_bucket{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0", le="0.05"}'
+        values: '0+970x90'
+      - series: 'vllm:inter_token_latency_seconds_count{job="vllm", namespace="llm", pod="vllm-a", model_name="qwen2.5-1.5b", engine="0"}'
+        values: '0+1000x90'
+    alert_rule_test:
+      - eval_time: 70m
+        alertname: LLMDecodeLatencyBudgetFastBurn
+        exp_alerts: []
+      - eval_time: 70m
+        alertname: LLMDecodeLatencyBudgetSlowBurn
+        exp_alerts: []

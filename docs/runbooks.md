@@ -48,6 +48,22 @@ replica fails on the same GPU node, cordon it (see GPUXidCritical).
 **Mitigate.** Add capacity (`maxReplicas`, GPU nodes). Short term: lower `--max-num-seqs` to protect
 TTFT at the cost of throughput, or cap `max_tokens` at the gateway.
 
+## LLMDecodeLatencyBudgetBurn
+
+`LLMDecodeLatencyBudgetFastBurn` (page) and `LLMDecodeLatencyBudgetSlowBurn` (ticket).
+
+**Meaning.** Too many streamed tokens arrive more than 50 ms after the previous one: answers "type" slowly.
+
+**Diagnose.**
+- *Running vs waiting*: decode slows down as the batch grows. Inter-token latency rising with running
+  requests is plain saturation.
+- Several replicas on one time-sliced GPU: they take turns on the SMs, and the A10G benchmark measured ITL
+  p50 going from 12 ms to 34 ms. *GPU Fleet → Who uses the GPUs* shows how many pods share a card.
+- Thermal or power throttling: *Time throttled*, *SM clock*.
+
+**Mitigate.** More GPUs, not more time-sliced replicas. Lower `--max-num-seqs` to cap the batch (better ITL,
+less throughput). A quantised or smaller model decodes faster.
+
 ## VLLMNoHealthyReplicas
 
 **Meaning.** No vLLM target answers scrapes for 10 minutes. The API is down.

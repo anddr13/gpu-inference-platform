@@ -539,7 +539,7 @@
       "gridPos": {
         "x": 0,
         "y": 6,
-        "w": 6,
+        "w": 4,
         "h": 4
       },
       "targets": [
@@ -601,9 +601,9 @@
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 6,
+        "x": 4,
         "y": 6,
-        "w": 6,
+        "w": 4,
         "h": 4
       },
       "targets": [
@@ -658,7 +658,71 @@
     {
       "type": "stat",
       "id": 11,
-      "title": "Availability burn rate (1h)",
+      "title": "Tokens with ITL <= 50 ms",
+      "description": "Decode-speed SLO 95%.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 8,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(vllm:inter_token_latency_seconds_bucket{namespace=~\"$namespace\", model_name=~\"$model\", le=\"0.05\"}[$__range])) / sum(increase(vllm:inter_token_latency_seconds_count{namespace=~\"$namespace\", model_name=~\"$model\"}[$__range]))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "red"
+              },
+              {
+                "value": 0.95,
+                "color": "green"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 12,
+      "title": "Availability burn (1h)",
       "description": "1 = spending the budget exactly over 30 days. 14.4 pages.",
       "datasource": {
         "type": "prometheus",
@@ -667,7 +731,7 @@
       "gridPos": {
         "x": 12,
         "y": 6,
-        "w": 6,
+        "w": 4,
         "h": 4
       },
       "targets": [
@@ -725,17 +789,17 @@
     },
     {
       "type": "stat",
-      "id": 12,
-      "title": "Latency burn rate (1h)",
+      "id": 13,
+      "title": "TTFT burn (1h)",
       "description": "",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
       },
       "gridPos": {
-        "x": 18,
+        "x": 16,
         "y": 6,
-        "w": 6,
+        "w": 4,
         "h": 4
       },
       "targets": [
@@ -792,8 +856,76 @@
       }
     },
     {
+      "type": "stat",
+      "id": 14,
+      "title": "Decode burn (1h)",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 20,
+        "y": 6,
+        "w": 4,
+        "h": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(1 - (sum(rate(vllm:inter_token_latency_seconds_bucket{namespace=~\"$namespace\", model_name=~\"$model\", le=\"0.05\"}[1h])) / sum(rate(vllm:inter_token_latency_seconds_count{namespace=~\"$namespace\", model_name=~\"$model\"}[1h])))) / 0.05",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "value": null,
+                "color": "green"
+              },
+              {
+                "value": 6,
+                "color": "orange"
+              },
+              {
+                "value": 14.4,
+                "color": "red"
+              }
+            ]
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto"
+      }
+    },
+    {
       "type": "row",
-      "id": 13,
+      "id": 15,
       "title": "Latency",
       "collapsed": false,
       "panels": [],
@@ -806,7 +938,7 @@
     },
     {
       "type": "timeseries",
-      "id": 14,
+      "id": 16,
       "title": "Time to first token",
       "description": "Dominated by queueing + prefill. Grows with prompt length and load.",
       "datasource": {
@@ -904,7 +1036,7 @@
     },
     {
       "type": "timeseries",
-      "id": 15,
+      "id": 17,
       "title": "Inter-token latency",
       "description": "Decode speed per user. Grows with batch size (concurrency).",
       "datasource": {
@@ -989,7 +1121,7 @@
     },
     {
       "type": "timeseries",
-      "id": 16,
+      "id": 18,
       "title": "End-to-end request latency",
       "description": "",
       "datasource": {
@@ -1074,7 +1206,7 @@
     },
     {
       "type": "timeseries",
-      "id": 17,
+      "id": 19,
       "title": "Where time goes (p95)",
       "description": "Queue time rising first means you need more replicas, not a faster GPU.",
       "datasource": {
@@ -1159,7 +1291,7 @@
     },
     {
       "type": "row",
-      "id": 18,
+      "id": 20,
       "title": "Throughput",
       "collapsed": false,
       "panels": [],
@@ -1172,7 +1304,7 @@
     },
     {
       "type": "timeseries",
-      "id": 19,
+      "id": 21,
       "title": "Tokens / s",
       "description": "",
       "datasource": {
@@ -1247,7 +1379,7 @@
     },
     {
       "type": "timeseries",
-      "id": 20,
+      "id": 22,
       "title": "Finished requests by reason",
       "description": "stop = natural end, length = hit max_tokens, abort = client went away.",
       "datasource": {
@@ -1312,7 +1444,7 @@
     },
     {
       "type": "timeseries",
-      "id": 21,
+      "id": 23,
       "title": "HTTP responses by status",
       "description": "A stream that fails after headers are sent still counts as 2xx.",
       "datasource": {
@@ -1377,7 +1509,7 @@
     },
     {
       "type": "timeseries",
-      "id": 22,
+      "id": 24,
       "title": "Request size (p50 / p95 tokens)",
       "description": "",
       "datasource": {
@@ -1472,7 +1604,7 @@
     },
     {
       "type": "row",
-      "id": 23,
+      "id": 25,
       "title": "Scheduler and KV cache",
       "collapsed": false,
       "panels": [],
@@ -1485,7 +1617,7 @@
     },
     {
       "type": "timeseries",
-      "id": 24,
+      "id": 26,
       "title": "Running vs waiting requests",
       "description": "Waiting > 0 for long = batch is full (max-num-seqs or KV cache).",
       "datasource": {
@@ -1560,7 +1692,7 @@
     },
     {
       "type": "timeseries",
-      "id": 25,
+      "id": 27,
       "title": "KV cache usage",
       "description": "",
       "datasource": {
@@ -1640,7 +1772,7 @@
     },
     {
       "type": "timeseries",
-      "id": 26,
+      "id": 28,
       "title": "Preemptions / s",
       "description": "Sequences evicted from KV cache and recomputed later. Should be ~0.",
       "datasource": {
@@ -1705,7 +1837,7 @@
     },
     {
       "type": "timeseries",
-      "id": 27,
+      "id": 29,
       "title": "Prefix cache hit ratio",
       "description": "Shared system prompts make prefill nearly free when this is high.",
       "datasource": {
@@ -1772,7 +1904,7 @@
     },
     {
       "type": "row",
-      "id": 28,
+      "id": 30,
       "title": "Autoscaling, GPU and unit economics",
       "collapsed": false,
       "panels": [],
@@ -1785,7 +1917,7 @@
     },
     {
       "type": "timeseries",
-      "id": 29,
+      "id": 31,
       "title": "Replicas (KEDA / HPA)",
       "description": "",
       "datasource": {
@@ -1871,7 +2003,7 @@
     },
     {
       "type": "timeseries",
-      "id": 30,
+      "id": 32,
       "title": "In-flight requests per replica",
       "description": "The KEDA scaling signal. Compare with targetInFlightPerReplica.",
       "datasource": {
@@ -1936,7 +2068,7 @@
     },
     {
       "type": "timeseries",
-      "id": 31,
+      "id": 33,
       "title": "GPU utilisation of serving pods",
       "description": "Near 100% at any batch size: a poor autoscaling signal, a fine saturation hint.",
       "datasource": {
@@ -2003,7 +2135,7 @@
     },
     {
       "type": "stat",
-      "id": 32,
+      "id": 34,
       "title": "Generated tokens / s / GPU",
       "description": "",
       "datasource": {
@@ -2063,7 +2195,7 @@
     },
     {
       "type": "stat",
-      "id": 33,
+      "id": 35,
       "title": "Cost per 1M generated tokens",
       "description": "Physical GPUs x $/hour / generated tokens per hour, at the current load. Set the price in the GPU $/hour box.",
       "datasource": {

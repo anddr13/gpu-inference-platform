@@ -150,15 +150,19 @@ def llm_serving() -> Dashboard:
 
     d.row("SLO (over the selected time range)")
     d.stat("Availability", f'1 - ((sum(increase(http_requests_total{{{h}, status="5xx"}}[$__range])) or vector(0)) / sum(increase(http_requests_total{{{h}}}[$__range])))',
-           "percentunit", w=6, decimals=3, thresholds=[(None, "red"), (0.995, "green")], description="SLO 99.5% non-5xx.")
+           "percentunit", w=4, decimals=3, thresholds=[(None, "red"), (0.995, "green")], description="SLO 99.5% non-5xx.")
     d.stat("Requests with TTFT <= 2.5s", f'sum(increase(vllm:time_to_first_token_seconds_bucket{{{s}, le="2.5"}}[$__range])) / sum(increase(vllm:time_to_first_token_seconds_count{{{s}}}[$__range]))',
-           "percentunit", w=6, decimals=3, thresholds=[(None, "red"), (0.99, "green")], description="SLO 99%.")
+           "percentunit", w=4, decimals=3, thresholds=[(None, "red"), (0.99, "green")], description="SLO 99%.")
+    d.stat("Tokens with ITL <= 50 ms", f'sum(increase(vllm:inter_token_latency_seconds_bucket{{{s}, le="0.05"}}[$__range])) / sum(increase(vllm:inter_token_latency_seconds_count{{{s}}}[$__range]))',
+           "percentunit", w=4, decimals=3, thresholds=[(None, "red"), (0.95, "green")], description="Decode-speed SLO 95%.")
     # Burn rates from raw series, not the recording rules, so they also show history recorded before the rules existed.
-    d.stat("Availability burn rate (1h)", f'((sum(rate(http_requests_total{{{h}, status="5xx"}}[1h])) or vector(0)) / sum(rate(http_requests_total{{{h}}}[1h]))) / 0.005', "short", w=6,
-           decimals=1, thresholds=[(None, "green"), (6, "orange"), (14.4, "red")],
-           description="1 = spending the budget exactly over 30 days. 14.4 pages.")
-    d.stat("Latency burn rate (1h)", f'(1 - (sum(rate(vllm:time_to_first_token_seconds_bucket{{{s}, le="2.5"}}[1h])) / sum(rate(vllm:time_to_first_token_seconds_count{{{s}}}[1h])))) / 0.01', "short", w=6, decimals=1,
-           thresholds=[(None, "green"), (6, "orange"), (14.4, "red")])
+    burn = [(None, "green"), (6, "orange"), (14.4, "red")]
+    d.stat("Availability burn (1h)", f'((sum(rate(http_requests_total{{{h}, status="5xx"}}[1h])) or vector(0)) / sum(rate(http_requests_total{{{h}}}[1h]))) / 0.005', "short", w=4,
+           decimals=1, thresholds=burn, description="1 = spending the budget exactly over 30 days. 14.4 pages.")
+    d.stat("TTFT burn (1h)", f'(1 - (sum(rate(vllm:time_to_first_token_seconds_bucket{{{s}, le="2.5"}}[1h])) / sum(rate(vllm:time_to_first_token_seconds_count{{{s}}}[1h])))) / 0.01', "short", w=4, decimals=1,
+           thresholds=burn)
+    d.stat("Decode burn (1h)", f'(1 - (sum(rate(vllm:inter_token_latency_seconds_bucket{{{s}, le="0.05"}}[1h])) / sum(rate(vllm:inter_token_latency_seconds_count{{{s}}}[1h])))) / 0.05', "short", w=4, decimals=1,
+           thresholds=burn)
 
     d.row("Latency")
     d.timeseries("Time to first token", quantiles("vllm:time_to_first_token_seconds", s), "s",
