@@ -7,6 +7,14 @@ Production-style LLM serving on Kubernetes: **NVIDIA GPU Operator**, **vLLM**, *
 **Prometheus + Grafana** with SLOs, burn-rate alerts and runbooks. Runs on one GPU machine (k3s) or on
 AWS EKS with Spot or on-demand GPU nodes (Terraform). Everything is code, and the alert rules have promtool unit tests.
 
+**TL;DR from the first real run** (EKS, one NVIDIA A10G, vLLM v0.32, Qwen2.5-1.5B, 2026-10-26):
+
+- **3,936 generated tokens/s** on one GPU at 96 concurrent requests, 0 errors in 10,096 requests, every SLO met.
+- **One replica per whole GPU beat two time-sliced replicas by 36-63%** in throughput, with 37-44% lower
+  inter-token latency. EKS now runs that way; [benchmarks](docs/benchmarks.md), [raw output](docs/results/).
+- **~$0.09 per 1M generated tokens** on on-demand g5.2xlarge, from a cluster that `make eks-up` builds and
+  `make eks-down` removes, with a cost preflight and a leftovers check.
+
 ## What this project demonstrates
 
 | Area | Where |

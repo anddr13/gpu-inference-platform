@@ -1,7 +1,7 @@
 # Benchmarks
 
 Numbers only count if someone can reproduce them. Every run records the hardware, versions and exact
-command, and the raw JSON goes to `results/` (`--json results/<date>-<name>.json`).
+command. Raw output of each run is committed in [results/](results/).
 
 ## Method
 
