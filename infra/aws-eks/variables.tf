@@ -43,10 +43,13 @@ variable "system_instance_types" {
 variable "gpu_instance_types" {
   description = <<-EOT
     Single-GPU (24 GB) types with 8 vCPU / 32 GiB: two vLLM replicas plus a rollout surge pod fit.
-    Several types widen the Spot pool and reduce interruptions.
+    Several types widen the Spot pool and reduce interruptions. On-demand launches are "prioritized":
+    the first type wins and the group kept retrying it through InsufficientInstanceCapacity for g6
+    in eu-north-1 (2026-10-28). g5 (A10G) goes first: more available there, and it is the benchmark
+    baseline in docs/benchmarks.md.
   EOT
   type        = list(string)
-  default     = ["g6.2xlarge", "g5.2xlarge"]
+  default     = ["g5.2xlarge", "g6.2xlarge"]
 }
 
 variable "gpu_capacity_type" {

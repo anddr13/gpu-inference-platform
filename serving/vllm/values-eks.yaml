@@ -11,9 +11,12 @@ autoscaling:
   # Calibrated from experiment 2: one exclusive replica met every SLO at 96 in-flight requests
   # (TTFT p95 2.01 s, ITL p95 23 ms). Target = 96 minus ~20% headroom for the minutes a new replica needs.
   targetInFlightPerReplica: 76
-  # A second replica needs a second GPU node. Nothing provisions it automatically yet:
-  # `make gpu-nodes N=2` (within the G-instance vCPU quota), Karpenter on the roadmap.
-  maxReplicas: 2
+  # One replica per GPU node, and nothing adds nodes automatically yet (Karpenter is on the roadmap).
+  # Measured 2026-10-29: with maxReplicas 2 on one GPU node, KEDA asked for a 2nd replica that stayed
+  # Pending, and the next rollout deadlocked for ~10 min: maxUnavailable 1 of 2 kept the old pod (and its
+  # GPU) alive while the new pod waited for that GPU. An unschedulable replica is worse than none.
+  # Raise this together with the GPU node count (`make gpu-nodes N=2`, quota permitting).
+  maxReplicas: 1
 
 # No spare GPU for a surge pod: replace in place, a short gap with one replica.
 # With replicas 1 and maxUnavailable 1, `helm --wait` returns before the new pod is Ready;

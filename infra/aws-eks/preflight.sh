@@ -154,7 +154,7 @@ fi
 
 echo "== Remote state"
 if [[ -f backend.hcl ]]; then
-  bucket=$(sed -nE 's/^[[:space:]]*bucket[[:space:]]*=[[:space:]]*"([^"]+)".*//p' backend.hcl)
+  bucket=$(sed -nE 's/^[[:space:]]*bucket[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' backend.hcl)
   if aws s3api head-bucket --bucket "$bucket" >/dev/null 2>&1; then
     ok "state bucket $bucket"
   else

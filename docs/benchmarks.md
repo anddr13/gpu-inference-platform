@@ -96,6 +96,50 @@ Left half of each graph: experiment 1. Right half: experiment 2.
 
 ![GPU Fleet dashboard during both experiments](images/grafana-gpu-fleet.png)
 
+## Experiment 5: a 7B model on an L4, bf16 vs AWQ, three runs each (2026-10-29)
+
+g6.2xlarge (NVIDIA L4 24 GB, ~300 GB/s memory bandwidth), exclusive GPU, `gpu-memory-utilization 0.90`,
+`max-num-seqs 128`. Load: 512 prompt / 256 output tokens, stages 1/16/32/64/96 x 60 s, three runs per model.
+Raw output: [results/](results/) (`2026-10-29-*`).
+
+| | Qwen2.5-1.5B (bf16) | Qwen2.5-7B (bf16) | Qwen2.5-7B-AWQ (int4) |
+|---|---|---|---|
+| Weights in GPU memory | 3.0 GB | 14.3 GB | 5.3 GB |
+| KV cache | 597,680 tokens | 76,336 tokens | 243,728 tokens |
+| Model download + load (vLLM log) | 38 s | 213 s (15 GB) | 40 s |
+
+Mean of three runs (out tok/s; ITL p50; TTFT p95). Run-to-run spread in tokens/s: under 1% for bf16,
+up to 9% for AWQ at 16-32 concurrent (its first run was the slowest):
+
+| Concurrency | 7B bf16 | 7B AWQ | AWQ / bf16 | 1.5B (one run) |
+|---|---|---|---|---|
+| 1 | 17.5; 58 ms; 0.16 s | 51; 20 ms; 0.15 s | x2.9 | 74; 14 ms; 0.07 s |
+| 16 | 241; 64 ms; 1.70 s | 585; 24 ms; 1.75 s | x2.4 | 969; 16 ms; 0.42 s |
+| 32 | 429; 74 ms; 1.83 s | 970; 31 ms; 2.08 s | x2.3 | 1,648; 19 ms; 0.51 s |
+| 64 | 634; 96 ms; **6.2 s** | 1,130; 54 ms; **3.9 s** | x1.8 | 2,544; 24 ms; 0.97 s |
+| 96 | 775; 117 ms; **10.3 s** | 1,175; 76 ms; **4.2 s** | x1.5 | 3,170; 28 ms; 1.05 s |
+
+What it shows:
+
+- **bf16 7B on an L4 misses the decode SLO (50 ms per token) even with a single request.** Every token
+  reads ~15 GB of weights; at ~300 GB/s that alone is ~50 ms. Decode is memory-bandwidth bound.
+- **AWQ is 1.5-2.9x faster**: 2.7x fewer weight bytes per token, and 3.2x more room for KV cache. It meets
+  all three SLOs up to 32 concurrent requests; both variants miss TTFT from 64 on.
+- **Cost at the highest load that meets every SLO (32 concurrent), L4 at $1.04/h:** AWQ ~$0.30 per 1M
+  generated tokens. bf16 cannot meet the decode SLO at any load; at the same concurrency it would cost ~$0.67.
+  The 1.5B model costs ~$0.09.
+- **L4 vs A10G** (1.5B, one exclusive replica, 96 concurrent): 3,170 vs 3,936 tok/s, -19%, in line with the
+  L4's lower memory bandwidth. At $1.04 vs $1.285 per hour the cost per token is the same.
+- **Not measured: answer quality.** AWQ trades a little accuracy for speed; a real choice needs an eval set.
+
+### The rollout that waited for itself
+
+During the 96-concurrent stage KEDA asked for a second replica (target 76 in flight). There was one GPU
+node, so the pod stayed Pending. The next model switch then stalled for ~10 minutes: with 2 desired replicas
+and `maxUnavailable: 1`, the Deployment kept the old pod running, which kept the only GPU, which the new pod
+needed. It cleared only when KEDA's 10-minute scale-down window brought the replicas back to 1. Fix:
+`maxReplicas` equals the GPU node count until something provisions nodes (values-eks.yaml).
+
 ## Experiment 3: prefix caching
 
 `--shared-prefix-tokens 0` vs `2000` at concurrency 16. Compare TTFT p95 and the prefix cache hit ratio.

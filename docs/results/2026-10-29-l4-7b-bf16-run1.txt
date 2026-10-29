@@ -1,0 +1,21 @@
+# Raw output of loadtest/llm_load.py, in-cluster Job
+# 2026-10-29, EKS 1.36 eu-north-1, g6.2xlarge (NVIDIA L4 24 GB), vLLM v0.32.0, exclusive GPU,
+# gpu-memory-utilization 0.90, max-num-seqs 128. Model: Qwen/Qwen2.5-7B-Instruct @ a09a354, bf16
+# 512 prompt / 256 output tokens, ignore_eos, stages 1/16/32/64/96 x 60 s.
+
+target http://vllm.llm.svc:8000 model=qwen2.5-7b prompt~512 tok max_tokens=256 stages=[1, 16, 32, 64, 96] x 60s
+stage: concurrency=1 ...
+stage: concurrency=16 ...
+stage: concurrency=32 ...
+stage: concurrency=64 ...
+stage: concurrency=96 ...
+
+ conc   reqs  err   req/s  out tok/s  TTFT p50     p95     p99  ITL p50 ms    p95  E2E p95  SLO
+-----------------------------------------------------------------------------------------------
+    1      5    0    0.07       17.5      0.16    0.16    0.16        58.1   62.6    14.62  ok
+   16     64    0    0.93      238.7      0.98    1.69    1.69        65.2   68.8    17.30  ok
+   32    128    0    1.68      429.7      0.72    1.80    1.94        74.3   77.7    19.16  ok
+   64    192    0    2.48      634.9      1.88    6.32    6.85        95.6  103.0    29.92  MISS
+   96    192    0    3.04      779.3      2.32   10.26   10.84       116.3  123.7    39.49  MISS
+
+Highest concurrency meeting TTFT p95 <= 2.5s: 32

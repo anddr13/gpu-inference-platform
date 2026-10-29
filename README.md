@@ -150,9 +150,20 @@ Method and the full table: [docs/benchmarks.md](docs/benchmarks.md).
 | Cold start, image cached (KEDA scale-out) | 1 min 51 s; KEDA asked for the 2nd replica 15 s after in-flight crossed the target |
 | Scaling out on a time-sliced GPU | barely helps: one replica did 2,426 tok/s at concurrency 32; two replicas sharing the A10G did 2,177-2,294 at 48-64 and 2,687 (+11%) at 96, while inter-token latency p50 went from 12 ms to 34 ms |
 | GPU utilisation | 100% from concurrency 8 to 96 while throughput tripled; SM active 0.73-0.83. Utilisation is not a load signal |
+| 7B on L4: bf16 vs AWQ (3 runs each) | AWQ **1.5-2.9x faster**; bf16 misses the 50 ms/token SLO even at 1 request (memory-bandwidth bound), AWQ meets every SLO up to 32 concurrent at **~$0.30 per 1M tokens** |
+| L4 vs A10G (1.5B, exclusive) | L4 19% slower (3,170 vs 3,936 tok/s) and 19% cheaper: same cost per token |
 | 1 exclusive replica (0.90) vs 2 time-sliced (0.30) | exclusive wins: **+36-63% tokens/s** and 37-44% lower inter-token latency at concurrency 48-96; peak 3,936 tok/s, **~$0.09 per 1M tokens**; TTFT p95 2.01 s vs 1.42 s is the trade-off |
 
 ## Gotchas this repo handles
+
+- **An unschedulable replica is worse than none.** KEDA scaled to 2 replicas on a single GPU node; the
+  Pending pod then deadlocked the next rollout for ~10 minutes (the old pod had to stay up and held the only
+  GPU). `maxReplicas` now equals the GPU node count until nodes are provisioned automatically.
+- **GPU capacity runs out.** eu-north-1 had no g6.2xlarge, then no g5.2xlarge, for over an hour; on-demand
+  launches are "prioritized", so the group retried the first type instead of falling back. Order the types
+  by availability, and expect to retry later.
+- **The account spend limit is enforced by SCP.** When the forecast crossed the limit, `eks:CreateNodegroup`
+  failed with an explicit deny, which reads like a permissions bug, not a budget one.
 
 - **`VLLM_PORT` collision.** A Service named `vllm` makes Kubernetes inject `VLLM_PORT=tcp://...`, which vLLM
   reads for its own purposes and refuses to start. The Deployment sets `enableServiceLinks: false`.
