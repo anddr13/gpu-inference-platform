@@ -87,6 +87,13 @@ releases:
     values:
       - serving/vllm/values.yaml
       - serving/vllm/values-{{ .Environment.Name }}.yaml
+{{- with env "VLLM_AGENT_MODEL" }}
+      # `make agent-vllm`: a tool-calling model for ai-sre-agent, reachable from CLIENT_CIDRS only.
+      - serving/vllm/values-agent.yaml
+      - serving/vllm/models/{{ . }}.yaml
+      - service:
+          loadBalancerSourceRanges: {{ requiredEnv "VLLM_CLIENT_CIDRS" | splitList "," | toJson }}
+{{- end }}
 {{- if not .Values.gpu }}
     hooks:
       # The fake vLLM script ships as a ConfigMap, so the dev cluster needs no image build.

@@ -1,0 +1,37 @@
+# Serving ai-sre-agent (github.com/anddr13/ai-sre-agent): its backtest stands run elsewhere (GCE) and call the
+# OpenAI API with tools. `make agent-vllm MODEL=<serving/vllm/models/*.yaml> CLIENT_CIDRS=...` layers this file
+# and one model file over values.yaml + values-eks.yaml.
+
+model:
+  # The agent's longest call in 1,133 so far was 16.3k tokens (prompt + 4k completion budget), p99 13.4k.
+  maxModelLen: 20480
+  # A few stands at once, each one investigation at a time.
+  maxNumSeqs: 8
+  extraArgs:
+    # Qwen3 tool calls come as <tool_call> JSON (hermes format); its <think> text goes to reasoning_content.
+    - --enable-auto-tool-choice
+    - --tool-call-parser=hermes
+    - --reasoning-parser=qwen3
+    # fp8 KV cache for every model, so they differ only in the weights: Qwen3-8B in bf16 leaves ~3 GB of a
+    # 24 GB L4 for the cache, ~20k tokens in bf16, ~40k in fp8.
+    - --kv-cache-dtype=fp8
+
+# Load an 8B model in bf16 (16.4 GB of weights) without nearing the limit.
+resources:
+  limits:
+    memory: 20Gi
+
+apiKey:
+  existingSecret: vllm-api-key
+  key: VLLM_API_KEY
+
+# A network load balancer that admits CLIENT_CIDRS only (set by the helmfile); requests need the API key.
+# Plain HTTP: the agent redacts tokens, passwords, IPs and e-mails before anything reaches the model.
+service:
+  type: LoadBalancer
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: nlb
+
+# One investigation at a time per stand: nothing to scale on.
+autoscaling:
+  enabled: false

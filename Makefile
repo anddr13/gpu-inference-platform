@@ -134,6 +134,28 @@ loadtest-local: ## Load test through `make api` (ARGS="--stages 1,8 --stage-dura
 fake: ## Fake vLLM (OpenAI API + vLLM metrics) on :8001, no cluster needed
 	python3 loadtest/fake_vllm.py --port 8001
 
+AGENT_ENV ?= .agent-vllm.env
+
+.PHONY: agent-vllm
+agent-vllm: confirm-context ## Serve MODEL (serving/vllm/models/MODEL.yaml) to ai-sre-agent from CLIENT_CIDRS=a/32,b/32
+	@[ -f serving/vllm/models/$(MODEL).yaml ] || { echo "no serving/vllm/models/$(MODEL).yaml" >&2; exit 1; }
+	@[ -n "$(CLIENT_CIDRS)" ] || { echo "CLIENT_CIDRS=x.x.x.x/32[,...] required: who may reach the API" >&2; exit 1; }
+	kubectl create namespace $(NS) --dry-run=client -o yaml | kubectl apply -f -
+	@# A random key, created once; the value never reaches the terminal.
+	@kubectl -n $(NS) get secret vllm-api-key > /dev/null 2>&1 || \
+	  kubectl -n $(NS) create secret generic vllm-api-key --from-literal=VLLM_API_KEY="$$(openssl rand -hex 32)"
+	VLLM_AGENT_MODEL=$(MODEL) VLLM_CLIENT_CIDRS=$(CLIENT_CIDRS) GRAFANA_ADMIN_PASSWORD=$${GRAFANA_ADMIN_PASSWORD:-unused} \
+	  helmfile -e $(ENV) -l name=vllm apply --skip-diff-on-install
+	kubectl -n $(NS) rollout status deploy/vllm --timeout=30m
+	@host=""; for i in $$(seq 1 60); do \
+	  host=$$(kubectl -n $(NS) get svc vllm -o jsonpath='{.status.loadBalancer.ingress[0].hostname}'); \
+	  [ -n "$$host" ] && break; sleep 5; done; \
+	[ -n "$$host" ] || { echo "the load balancer has no address yet" >&2; exit 1; }; \
+	served=$$(sed -n 's/^  servedName: //p' serving/vllm/models/$(MODEL).yaml); \
+	key=$$(kubectl -n $(NS) get secret vllm-api-key -o jsonpath='{.data.VLLM_API_KEY}' | base64 -d); \
+	umask 077; printf 'LLM_BASE_URL=http://%s:8000/v1\nLLM_MODEL=%s\nLLM_API_KEY=%s\n' "$$host" "$$served" "$$key" > $(AGENT_ENV); \
+	echo "http://$$host:8000/v1 serves $$served; settings for the agent in $(AGENT_ENV) (gitignored)"
+
 ##@ Access
 
 .PHONY: grafana
@@ -159,6 +181,13 @@ lint-charts: ## helm lint + kubeconform on rendered manifests
 	helm lint charts/llm-observability
 	helm template vllm charts/vllm -n $(NS) -f serving/vllm/values.yaml -f serving/vllm/values-$(ENV).yaml \
 	  | kubeconform -strict -summary $(KUBECONFORM_SCHEMAS)
+	@# The ai-sre-agent profile, one render per model; and the chart refuses a load balancer open to everyone.
+	for m in serving/vllm/models/*.yaml; do \
+	  helm template vllm charts/vllm -n $(NS) -f serving/vllm/values.yaml -f serving/vllm/values-eks.yaml \
+	    -f serving/vllm/values-agent.yaml -f $$m --set 'service.loadBalancerSourceRanges={192.0.2.1/32}' \
+	    | kubeconform -strict -summary $(KUBECONFORM_SCHEMAS) || exit 1; \
+	done
+	! helm template vllm charts/vllm -f serving/vllm/values-agent.yaml > /dev/null 2>&1
 	helm template llm-observability charts/llm-observability -n monitoring \
 	  | kubeconform -strict -summary $(KUBECONFORM_SCHEMAS)
 

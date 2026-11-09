@@ -47,6 +47,9 @@ env: []
 service:
   type: ClusterIP
   port: 8000
+  annotations: {}
+  # Required with type LoadBalancer (the chart refuses an open one), together with apiKey.existingSecret.
+  loadBalancerSourceRanges: []
 
 resources:
   requests:

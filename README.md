@@ -104,6 +104,20 @@ histogram buckets, with a latency model (batch slots, queueing, KV cache) and fa
 ServiceMonitor, KEDA trigger, rules and dashboards are the same ones that run on the GPU. Only the GPU
 Operator is skipped. The dev cluster uses its own kubeconfig, so work contexts stay untouched.
 
+### Serving an agent outside the cluster
+
+[ai-sre-agent](https://github.com/anddr13/ai-sre-agent) backtests run on GCE machines and call this vLLM:
+
+```bash
+make agent-vllm ENV=eks MODEL=qwen3-8b CLIENT_CIDRS=<stand IP>/32,<your IP>/32
+```
+
+The model comes from `serving/vllm/models/` (pinned revision), with tool calling for Qwen3 (`hermes` parser,
+reasoning split off), a 20k context and an fp8 KV cache (`serving/vllm/values-agent.yaml`). The Service becomes
+an NLB that admits `CLIENT_CIDRS` only, and vLLM wants a random API key from the Secret `vllm-api-key`. The
+chart refuses a LoadBalancer without either. The base URL, model name and key land in `.agent-vllm.env`
+(gitignored), not in the terminal. Running it again with another `MODEL` swaps the model in place.
+
 ## Observability
 
 **LLM Serving - vLLM**: requests/s, TTFT and inter-token latency percentiles, where time goes (queue /

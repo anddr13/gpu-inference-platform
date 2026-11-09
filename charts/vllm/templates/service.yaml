@@ -6,8 +6,22 @@ metadata:
     {{- include "vllm.labels" . | nindent 4 }}
     # The ServiceMonitor uses this as the Prometheus job name, so every release scrapes as job="vllm".
     llm.platform/engine: vllm
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   type: {{ .Values.service.type }}
+  {{- if eq .Values.service.type "LoadBalancer" }}
+  {{- if not .Values.service.loadBalancerSourceRanges }}
+  {{- fail "service.type LoadBalancer needs service.loadBalancerSourceRanges: the API must not be open to the internet" }}
+  {{- end }}
+  {{- if not .Values.apiKey.existingSecret }}
+  {{- fail "service.type LoadBalancer needs apiKey.existingSecret: a reachable API without a key serves anyone" }}
+  {{- end }}
+  loadBalancerSourceRanges:
+    {{- toYaml .Values.service.loadBalancerSourceRanges | nindent 4 }}
+  {{- end }}
   selector:
     {{- include "vllm.selectorLabels" . | nindent 4 }}
   ports:

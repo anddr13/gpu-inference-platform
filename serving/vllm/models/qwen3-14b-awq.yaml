@@ -1,0 +1,6 @@
+model:
+  name: Qwen/Qwen3-14B-AWQ
+  revision: 31c69efc29464b6bb0aee1398b5a7b50a99340c3
+  servedName: Qwen/Qwen3-14B-AWQ
+  # AWQ weights (10 GB), activations in fp16.
+  dtype: float16
