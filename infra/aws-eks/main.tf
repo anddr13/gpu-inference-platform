@@ -5,8 +5,30 @@ data "aws_availability_zones" "available" {
   }
 }
 
+# Not every GPU type is offered in every zone (eu-north-1, 2026-11-09: g5.2xlarge in 1b/1c, g6.2xlarge in 1a/1b).
+# An ASG that picks a zone without the type fails the node group (CREATE_FAILED) instead of trying another.
+data "aws_ec2_instance_type_offerings" "gpu" {
+  for_each      = toset(var.gpu_instance_types)
+  location_type = "availability-zone"
+  filter {
+    name   = "instance-type"
+    values = [each.key]
+  }
+}
+
 locals {
   azs = slice(data.aws_availability_zones.available.names, 0, 3)
+  # The zones that offer every GPU type, and their private subnets for the GPU node group.
+  # gpu_zones narrows them further when a zone is out of capacity (InsufficientInstanceCapacity: EKS does not
+  # fall back to the next type or zone while it creates the group).
+  gpu_azs = [for az in local.azs : az if alltrue([for t in var.gpu_instance_types : contains(data.aws_ec2_instance_type_offerings.gpu[t].locations, az)]) && (length(var.gpu_zones) == 0 || contains(var.gpu_zones, az))]
+}
+
+check "gpu_zones" {
+  assert {
+    condition     = length(local.gpu_azs) > 0
+    error_message = "No zone among ${join(", ", local.azs)} offers all of ${join(", ", var.gpu_instance_types)}: shorten gpu_instance_types."
+  }
 }
 
 module "vpc" {
@@ -90,6 +112,7 @@ module "eks" {
       ami_type       = "AL2023_x86_64_NVIDIA"
       instance_types = var.gpu_instance_types
       capacity_type  = var.gpu_capacity_type
+      subnet_ids     = [for i, az in local.azs : module.vpc.private_subnets[i] if contains(local.gpu_azs, az)]
 
       min_size     = 0
       max_size     = var.gpu_max_size

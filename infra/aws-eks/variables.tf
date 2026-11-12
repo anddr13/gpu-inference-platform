@@ -52,6 +52,15 @@ variable "gpu_instance_types" {
   default     = ["g5.2xlarge", "g6.2xlarge"]
 }
 
+variable "gpu_zones" {
+  description = <<-EOT
+    Zones for the GPU node group; empty = every zone that offers all of gpu_instance_types. Set it when a zone is
+    out of capacity, e.g. -var 'gpu_instance_types=["g5.2xlarge"]' -var 'gpu_zones=["eu-north-1c"]'.
+  EOT
+  type        = list(string)
+  default     = []
+}
+
 variable "gpu_capacity_type" {
   description = "SPOT for the lab (~60% cheaper, can be reclaimed with 2 minutes notice) or ON_DEMAND."
   type        = string
